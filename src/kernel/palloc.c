@@ -5,14 +5,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct palloc_node {
+    struct palloc_node *next;
+};
+
 static const uintptr_t page_size = 4096u;
 static const uintptr_t palloc_low_cutoff = 0x02000000u;
 static const uintptr_t palloc_high_limit = (uintptr_t)0x100000000ull;
 
+static struct palloc_node *free_list_head;
 static uintptr_t alloc_region_begin;
 static uintptr_t alloc_region_end;
-static uintptr_t alloc_next_page;
-static uint64_t alloc_page_count;
+static uint64_t free_page_count;
 
 static size_t string_length(const char *text) {
     size_t length = 0u;
@@ -76,28 +80,58 @@ static void write_hex_uintptr(uintptr_t value) {
 }
 
 void palloc_initialize(void) {
+    uintptr_t region_begin;
+    uintptr_t region_end;
+    uintptr_t page;
+
+    free_list_head = NULL;
     alloc_region_begin = 0u;
     alloc_region_end = 0u;
-    alloc_next_page = 0u;
-    alloc_page_count = 0u;
+    free_page_count = 0u;
 
-    if (memmap_find_largest_conventional_region(palloc_low_cutoff, palloc_high_limit, &alloc_region_begin, &alloc_region_end)) {
-        alloc_next_page = alloc_region_end;
-        alloc_page_count = (uint64_t)((alloc_region_end - alloc_region_begin) / page_size);
+    if (!memmap_find_largest_conventional_region(palloc_low_cutoff, palloc_high_limit, &region_begin, &region_end)) {
+        return;
+    }
+
+    alloc_region_begin = region_begin;
+    alloc_region_end = region_end;
+
+    page = region_begin;
+
+    while (page + page_size <= region_end) {
+        struct palloc_node *node = (struct palloc_node *)(void *)page;
+        node->next = free_list_head;
+        free_list_head = node;
+        ++free_page_count;
+        page += page_size;
     }
 }
 
 uintptr_t palloc_alloc(void) {
-    if (alloc_next_page <= alloc_region_begin) {
+    struct palloc_node *node;
+
+    if (free_list_head == NULL) {
         return 0u;
     }
 
-    alloc_next_page -= page_size;
-    return alloc_next_page;
+    node = free_list_head;
+    free_list_head = node->next;
+    --free_page_count;
+
+    return (uintptr_t)(void *)node;
 }
 
 void palloc_free(uintptr_t page) {
-    (void)page;
+    struct palloc_node *node;
+
+    if (page == 0u) {
+        return;
+    }
+
+    node = (struct palloc_node *)(void *)page;
+    node->next = free_list_head;
+    free_list_head = node;
+    ++free_page_count;
 }
 
 void palloc_self_test(void) {
@@ -111,7 +145,7 @@ void palloc_self_test(void) {
     write_text("\r\n");
 
     write_text("palloc pages ");
-    write_decimal_u64(alloc_page_count);
+    write_decimal_u64(free_page_count);
     write_text("\r\n");
 
     first = palloc_alloc();
@@ -135,13 +169,10 @@ void palloc_self_test(void) {
     palloc_free(second);
     palloc_free(first);
 
-    write_line("free noop");
-}
+    if (free_page_count == 0u) {
+        write_line("free fail");
+        return;
+    }
 
-uintptr_t palloc_reserved_begin(void) {
-    return 0u;
-}
-
-uintptr_t palloc_reserved_end(void) {
-    return 0u;
+    write_line("free ok");
 }
