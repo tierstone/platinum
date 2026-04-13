@@ -77,11 +77,11 @@ void kernel_main(void *image_handle, void *system_table) {
     idt_initialize();
     write_line("idt ok");
 
-    paging_initialize();
-    write_line("paging ok");
-
     palloc_initialize();
     palloc_self_test();
+
+    paging_initialize();
+    write_line("paging 4k ok");
 
     write_line("hello from /p/OS");
 

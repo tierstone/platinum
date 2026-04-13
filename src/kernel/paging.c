@@ -1,59 +1,149 @@
 #include "kernel/paging.h"
 #include "kernel/core.h"
+#include "kernel/memmap.h"
+#include "kernel/palloc.h"
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
-enum {
-    paging_present = 0x001u,
-    paging_writable = 0x002u,
-    paging_large_page = 0x080u,
-    paging_table_entries = 512u,
-    paging_page_size_2m = 0x200000u,
-    paging_pdpt_count = 4u
-};
+static const uint64_t paging_present = 0x001ull;
+static const uint64_t paging_writable = 0x002ull;
+static const uint64_t paging_flags_table = 0x003ull;
+static const uint64_t paging_flags_page = 0x003ull;
+static const uint64_t paging_page_size = 4096ull;
+static const uint64_t paging_max_address = 0x100000000ull;
 
-_Alignas(4096) static uint64_t paging_pml4[paging_table_entries];
-_Alignas(4096) static uint64_t paging_pdpt[paging_table_entries];
-_Alignas(4096) static uint64_t paging_pd[paging_pdpt_count][paging_table_entries];
+static uint64_t *paging_pml4;
 
-void paging_initialize(void) {
-    uint64_t flags_table = (uint64_t)(paging_present | paging_writable);
-    uint64_t flags_page = (uint64_t)(paging_present | paging_writable | paging_large_page);
+static void zero_page(uint64_t *page) {
+    size_t index;
+
+    for (index = 0u; index < 512u; ++index) {
+        page[index] = 0u;
+    }
+}
+
+static uint64_t *alloc_table(void) {
+    uintptr_t page = palloc_alloc();
+    uint64_t *table;
+
+    if (page == 0u) {
+        return NULL;
+    }
+
+    table = (uint64_t *)(void *)page;
+    zero_page(table);
+    return table;
+}
+
+static uint64_t *entry_table(uint64_t entry) {
+    return (uint64_t *)(void *)(uintptr_t)(entry & 0x000FFFFFFFFFF000ull);
+}
+
+static uint64_t *get_or_create_next(uint64_t *table, size_t index) {
+    uint64_t *next;
+
+    if ((table[index] & paging_present) != 0u) {
+        return entry_table(table[index]);
+    }
+
+    next = alloc_table();
+    if (next == NULL) {
+        return NULL;
+    }
+
+    table[index] = ((uint64_t)(uintptr_t)next) | paging_flags_table;
+    return next;
+}
+
+static int map_page_4k(uintptr_t virtual_address, uintptr_t physical_address) {
+    size_t pml4_index;
     size_t pdpt_index;
     size_t pd_index;
+    size_t pt_index;
+    uint64_t *pdpt;
+    uint64_t *pd;
+    uint64_t *pt;
 
-    for (pd_index = 0u; pd_index < paging_table_entries; ++pd_index) {
-        paging_pml4[pd_index] = 0u;
-        paging_pdpt[pd_index] = 0u;
+    pml4_index = (size_t)((virtual_address >> 39) & 0x1FFu);
+    pdpt_index = (size_t)((virtual_address >> 30) & 0x1FFu);
+    pd_index = (size_t)((virtual_address >> 21) & 0x1FFu);
+    pt_index = (size_t)((virtual_address >> 12) & 0x1FFu);
+
+    pdpt = get_or_create_next(paging_pml4, pml4_index);
+    if (pdpt == NULL) {
+        return 0;
     }
 
-    for (pdpt_index = 0u; pdpt_index < paging_pdpt_count; ++pdpt_index) {
-        for (pd_index = 0u; pd_index < paging_table_entries; ++pd_index) {
-            paging_pd[pdpt_index][pd_index] = 0u;
+    pd = get_or_create_next(pdpt, pdpt_index);
+    if (pd == NULL) {
+        return 0;
+    }
+
+    pt = get_or_create_next(pd, pd_index);
+    if (pt == NULL) {
+        return 0;
+    }
+
+    pt[pt_index] = ((uint64_t)physical_address) | paging_flags_page;
+    return 1;
+}
+
+static uintptr_t highest_physical_end(void) {
+    uintptr_t highest = 0u;
+    size_t index;
+
+    for (index = 0u; index < memmap_get_descriptor_count(); ++index) {
+        const struct efi_memory_descriptor *descriptor;
+        uint64_t end64;
+        uintptr_t end;
+
+        descriptor = memmap_get_descriptor(index);
+        if (descriptor == NULL) {
+            continue;
+        }
+
+        end64 = descriptor->physical_start + descriptor->number_of_pages * paging_page_size;
+        if (end64 > paging_max_address) {
+            end64 = paging_max_address;
+        }
+
+        end = (uintptr_t)end64;
+        if (end > highest) {
+            highest = end;
         }
     }
 
-    paging_pml4[0] = ((uint64_t)(uintptr_t)&paging_pdpt[0]) | flags_table;
-
-    for (pdpt_index = 0u; pdpt_index < paging_pdpt_count; ++pdpt_index) {
-        paging_pdpt[pdpt_index] = ((uint64_t)(uintptr_t)&paging_pd[pdpt_index][0]) | flags_table;
-
-        for (pd_index = 0u; pd_index < paging_table_entries; ++pd_index) {
-            uint64_t physical_base;
-
-            physical_base = ((uint64_t)pdpt_index * (uint64_t)paging_table_entries + (uint64_t)pd_index) * (uint64_t)paging_page_size_2m;
-            paging_pd[pdpt_index][pd_index] = physical_base | flags_page;
-        }
+    if (highest == 0u) {
+        return 0u;
     }
 
-    arch_load_cr3((uint64_t)(uintptr_t)&paging_pml4[0]);
+    highest = (highest + (uintptr_t)(paging_page_size - 1u)) & ~(uintptr_t)(paging_page_size - 1u);
+    return highest;
 }
 
-uintptr_t paging_reserved_begin(void) {
-    return (uintptr_t)&paging_pml4[0];
-}
+void paging_initialize(void) {
+    uintptr_t limit;
+    uintptr_t address;
 
-uintptr_t paging_reserved_end(void) {
-    return (uintptr_t)(&paging_pd[paging_pdpt_count][0]);
+    paging_pml4 = alloc_table();
+    if (paging_pml4 == NULL) {
+        arch_halt_forever();
+    }
+
+    limit = highest_physical_end();
+    if (limit == 0u) {
+        arch_halt_forever();
+    }
+
+    address = 0u;
+    while (address < limit) {
+        if (!map_page_4k(address, address)) {
+            arch_halt_forever();
+        }
+
+        address += (uintptr_t)paging_page_size;
+    }
+
+    arch_load_cr3((uint64_t)(uintptr_t)paging_pml4);
 }
