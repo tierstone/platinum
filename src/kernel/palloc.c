@@ -1,0 +1,147 @@
+#include "kernel/palloc.h"
+#include "kernel/memmap.h"
+#include "drivers/serial.h"
+
+#include <stddef.h>
+#include <stdint.h>
+
+static const uintptr_t page_size = 4096u;
+static const uintptr_t palloc_low_cutoff = 0x02000000u;
+static const uintptr_t palloc_high_limit = (uintptr_t)0x100000000ull;
+
+static uintptr_t alloc_region_begin;
+static uintptr_t alloc_region_end;
+static uintptr_t alloc_next_page;
+static uint64_t alloc_page_count;
+
+static size_t string_length(const char *text) {
+    size_t length = 0u;
+
+    while (text[length] != '\0') {
+        ++length;
+    }
+
+    return length;
+}
+
+static void write_text(const char *text) {
+    serial_write(text, string_length(text));
+}
+
+static void write_line(const char *text) {
+    write_text(text);
+    serial_write("\r\n", 2u);
+}
+
+static void write_decimal_u64(uint64_t value) {
+    char digits[32];
+    size_t count = 0u;
+    uint64_t current = value;
+
+    if (current == 0u) {
+        serial_write("0", 1u);
+        return;
+    }
+
+    while (current != 0u) {
+        digits[count] = (char)('0' + (current % 10u));
+        current /= 10u;
+        ++count;
+    }
+
+    while (count != 0u) {
+        --count;
+        serial_write(&digits[count], 1u);
+    }
+}
+
+static void write_hex_uintptr(uintptr_t value) {
+    static const char digits[] = "0123456789abcdef";
+    char output[2 + sizeof(uintptr_t) * 2];
+    size_t index;
+
+    output[0] = '0';
+    output[1] = 'x';
+
+    for (index = 0u; index < sizeof(uintptr_t) * 2u; ++index) {
+        unsigned int shift;
+        uintptr_t nibble;
+
+        shift = (unsigned int)((sizeof(uintptr_t) * 2u - 1u - index) * 4u);
+        nibble = (value >> shift) & (uintptr_t)0xFu;
+        output[2u + index] = digits[(unsigned int)nibble];
+    }
+
+    serial_write(output, sizeof(output));
+}
+
+void palloc_initialize(void) {
+    alloc_region_begin = 0u;
+    alloc_region_end = 0u;
+    alloc_next_page = 0u;
+    alloc_page_count = 0u;
+
+    if (memmap_find_largest_conventional_region(palloc_low_cutoff, palloc_high_limit, &alloc_region_begin, &alloc_region_end)) {
+        alloc_next_page = alloc_region_end;
+        alloc_page_count = (uint64_t)((alloc_region_end - alloc_region_begin) / page_size);
+    }
+}
+
+uintptr_t palloc_alloc(void) {
+    if (alloc_next_page <= alloc_region_begin) {
+        return 0u;
+    }
+
+    alloc_next_page -= page_size;
+    return alloc_next_page;
+}
+
+void palloc_free(uintptr_t page) {
+    (void)page;
+}
+
+void palloc_self_test(void) {
+    uintptr_t first;
+    uintptr_t second;
+
+    write_text("palloc region ");
+    write_hex_uintptr(alloc_region_begin);
+    write_text(" ");
+    write_hex_uintptr(alloc_region_end);
+    write_text("\r\n");
+
+    write_text("palloc pages ");
+    write_decimal_u64(alloc_page_count);
+    write_text("\r\n");
+
+    first = palloc_alloc();
+    second = palloc_alloc();
+
+    if (first == 0u || second == 0u) {
+        write_line("palloc fail");
+        return;
+    }
+
+    write_line("palloc ok");
+
+    write_text("page ");
+    write_hex_uintptr(first);
+    write_text("\r\n");
+
+    write_text("page ");
+    write_hex_uintptr(second);
+    write_text("\r\n");
+
+    palloc_free(second);
+    palloc_free(first);
+
+    write_line("free noop");
+}
+
+uintptr_t palloc_reserved_begin(void) {
+    return 0u;
+}
+
+uintptr_t palloc_reserved_end(void) {
+    return 0u;
+}

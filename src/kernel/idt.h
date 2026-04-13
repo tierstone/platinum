@@ -1,6 +1,10 @@
 #ifndef IDT_H
 #define IDT_H
 
+#include <stdint.h>
+
 void idt_initialize(void);
+uintptr_t idt_reserved_begin(void);
+uintptr_t idt_reserved_end(void);
 
 #endif

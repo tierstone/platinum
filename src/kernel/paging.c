@@ -49,3 +49,11 @@ void paging_initialize(void) {
 
     arch_load_cr3((uint64_t)(uintptr_t)&paging_pml4[0]);
 }
+
+uintptr_t paging_reserved_begin(void) {
+    return (uintptr_t)&paging_pml4[0];
+}
+
+uintptr_t paging_reserved_end(void) {
+    return (uintptr_t)(&paging_pd[paging_pdpt_count][0]);
+}

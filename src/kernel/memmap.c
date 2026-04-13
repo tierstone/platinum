@@ -70,15 +70,6 @@ struct efi_system_table {
     struct efi_boot_services *boot_services;
 };
 
-struct efi_memory_descriptor {
-    uint32_t type;
-    uint32_t pad;
-    uint64_t physical_start;
-    uint64_t virtual_start;
-    uint64_t number_of_pages;
-    uint64_t attribute;
-};
-
 enum {
     efi_success = 0,
     efi_conventional_memory = 7
@@ -239,4 +230,94 @@ void memmap_print_summary(void) {
     write_text("mem bytes ");
     write_decimal_u64((uint64_t)memory_map_size_used);
     write_text("\r\n");
+}
+
+size_t memmap_get_descriptor_count(void) {
+    return memory_map_descriptor_count;
+}
+
+size_t memmap_get_descriptor_size(void) {
+    return memory_map_descriptor_size;
+}
+
+const struct efi_memory_descriptor *memmap_get_descriptor(size_t index) {
+    size_t offset;
+
+    if (memory_map_descriptor_size == 0u) {
+        return NULL;
+    }
+
+    if (index >= memory_map_descriptor_count) {
+        return NULL;
+    }
+
+    offset = index * memory_map_descriptor_size;
+    return (const struct efi_memory_descriptor *)(const void *)&memory_map_buffer[offset];
+}
+
+uintptr_t memmap_reserved_begin(void) {
+    return (uintptr_t)&memory_map_buffer[0];
+}
+
+uintptr_t memmap_reserved_end(void) {
+    return (uintptr_t)(&memory_map_buffer[sizeof(memory_map_buffer)]);
+}
+
+int memmap_find_largest_conventional_region(uintptr_t minimum_start, uintptr_t maximum_end, uintptr_t *region_begin, uintptr_t *region_end) {
+    size_t index;
+    uintptr_t best_begin = 0u;
+    uintptr_t best_end = 0u;
+    uint64_t best_pages = 0u;
+
+    for (index = 0u; index < memory_map_descriptor_count; ++index) {
+        const struct efi_memory_descriptor *descriptor;
+        uintptr_t begin;
+        uintptr_t end;
+        uint64_t pages;
+
+        descriptor = memmap_get_descriptor(index);
+        if (descriptor == NULL) {
+            continue;
+        }
+
+        if (descriptor->type != efi_conventional_memory) {
+            continue;
+        }
+
+        begin = (uintptr_t)descriptor->physical_start;
+        end = (uintptr_t)(descriptor->physical_start + descriptor->number_of_pages * 4096ull);
+
+        if (begin < minimum_start) {
+            begin = minimum_start;
+        }
+
+        if (end > maximum_end) {
+            end = maximum_end;
+        }
+
+        begin = (begin + 4095u) & ~(uintptr_t)4095u;
+        end &= ~(uintptr_t)4095u;
+
+        if (end <= begin) {
+            continue;
+        }
+
+        pages = (uint64_t)((end - begin) / 4096u);
+
+        if (pages > best_pages) {
+            best_pages = pages;
+            best_begin = begin;
+            best_end = end;
+        }
+    }
+
+    if (best_pages == 0u) {
+        *region_begin = 0u;
+        *region_end = 0u;
+        return 0;
+    }
+
+    *region_begin = best_begin;
+    *region_end = best_end;
+    return 1;
 }

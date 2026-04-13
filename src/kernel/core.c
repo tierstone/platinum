@@ -3,6 +3,7 @@
 #include "kernel/idt.h"
 #include "kernel/memmap.h"
 #include "kernel/paging.h"
+#include "kernel/palloc.h"
 #include "drivers/serial.h"
 
 #include <stddef.h>
@@ -78,6 +79,9 @@ void kernel_main(void *image_handle, void *system_table) {
 
     paging_initialize();
     write_line("paging ok");
+
+    palloc_initialize();
+    palloc_self_test();
 
     write_line("hello from /p/OS");
 

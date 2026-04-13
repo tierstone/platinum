@@ -56,8 +56,9 @@ Focus: reach stable usermode execution.
 * [x] IDT setup + basic exception handlers
 * [x] UEFI memory map parsing
 * [x] Paging — initial identity map using 2 MiB pages
+* [x] Physical page allocator — bootstrap bump allocator
+* [ ] Physical page allocator — reusable free-list or bitmap
 * [ ] Paging — 4KB pages
-* [ ] Physical page allocator
 * [ ] Timer interrupt (PIT or HPET via QEMU)
 * [ ] Minimal preemptive scheduler
 * [ ] Syscall entry (syscall/sysret or int)

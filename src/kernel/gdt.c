@@ -40,3 +40,17 @@ void gdt_initialize(void) {
 
     arch_load_gdt(&gdtr[0], 0x10u);
 }
+
+uintptr_t gdt_reserved_begin(void) {
+    uintptr_t a = (uintptr_t)&gdt[0];
+    uintptr_t b = (uintptr_t)&gdtr[0];
+
+    return a < b ? a : b;
+}
+
+uintptr_t gdt_reserved_end(void) {
+    uintptr_t a = (uintptr_t)(&gdt[gdt_entry_count]);
+    uintptr_t b = (uintptr_t)(&gdtr[10]);
+
+    return a > b ? a : b;
+}

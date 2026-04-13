@@ -38,26 +38,28 @@ static void write_le64(uint8_t *buffer, uint64_t value) {
 }
 
 static void idt_set_gate(uint8_t vector, void (*handler)(void)) {
-    uintptr_t addr = (uintptr_t)handler;
+    uintptr_t address = (uintptr_t)handler;
 
-    idt[vector].offset_low = (uint16_t)(addr & 0xFFFFu);
+    idt[vector].offset_low = (uint16_t)(address & 0xFFFFu);
     idt[vector].selector = 0x08u;
     idt[vector].ist = 0u;
     idt[vector].type_attributes = 0x8Eu;
-    idt[vector].offset_mid = (uint16_t)((addr >> 16) & 0xFFFFu);
-    idt[vector].offset_high = (uint32_t)((addr >> 32) & 0xFFFFFFFFu);
+    idt[vector].offset_mid = (uint16_t)((address >> 16) & 0xFFFFu);
+    idt[vector].offset_high = (uint32_t)((address >> 32) & 0xFFFFFFFFu);
     idt[vector].reserved = 0u;
 }
 
 void idt_initialize(void) {
-    for (size_t i = 0; i < idt_entry_count; i++) {
-        idt[i].offset_low = 0;
-        idt[i].selector = 0;
-        idt[i].ist = 0;
-        idt[i].type_attributes = 0;
-        idt[i].offset_mid = 0;
-        idt[i].offset_high = 0;
-        idt[i].reserved = 0;
+    size_t index;
+
+    for (index = 0u; index < idt_entry_count; ++index) {
+        idt[index].offset_low = 0u;
+        idt[index].selector = 0u;
+        idt[index].ist = 0u;
+        idt[index].type_attributes = 0u;
+        idt[index].offset_mid = 0u;
+        idt[index].offset_high = 0u;
+        idt[index].reserved = 0u;
     }
 
     idt_set_gate(6u, arch_isr_invalid_opcode);
@@ -66,4 +68,18 @@ void idt_initialize(void) {
     write_le64(&idtr[2], (uint64_t)(uintptr_t)&idt[0]);
 
     arch_load_idt(&idtr[0]);
+}
+
+uintptr_t idt_reserved_begin(void) {
+    uintptr_t a = (uintptr_t)&idt[0];
+    uintptr_t b = (uintptr_t)&idtr[0];
+
+    return a < b ? a : b;
+}
+
+uintptr_t idt_reserved_end(void) {
+    uintptr_t a = (uintptr_t)(&idt[idt_entry_count]);
+    uintptr_t b = (uintptr_t)(&idtr[10]);
+
+    return a > b ? a : b;
 }
