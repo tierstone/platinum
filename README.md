@@ -34,58 +34,78 @@ python3 boot.py
 
 ## Roadmap
 
-### Phase 1: Kernel Base
-- [x] UEFI entry — x86_64 COFF entry point (`boot.S`)
-- [x] Early serial output — Legacy UART `0x3F8` driver (`serial.c`)
-- [x] Build pipeline — Clang + `lld-link`, PE32+ output (`build.py`)
-- [x] QEMU/OVMF launch script (`boot.py`)
-- [ ] GDT, IDT setup
-- [ ] Paging — 4KB pages, identity map
-- [ ] Memory manager — Buddy allocator + Slab allocator
-- [ ] VirtIO-console driver (early `printk`)
-- [ ] Preemptive round-robin scheduler
-- [ ] Syscalls: `read`, `write`, `open`, `close`, `fork`, `execve`, `exit`, `waitpid`
-- [ ] ELF loader for static binaries
+### Phase 1: Kernel Bring-up
 
-### Phase 2: Storage & Filesystem
-- [ ] VirtIO-block driver
-- [ ] VFS — inodes, dentries, file descriptors
-- [ ] `/p/fs` — log-structured, copy-on-write, B-tree metadata
-- [ ] `mkfs.pfs` utility
-- [ ] Mount `/p/fs` as root
+Focus: reach stable usermode execution.
 
-### Phase 3: Init & Shell
-- [ ] `pinit` — PID 1, parse service structs, spawn processes
-- [ ] `psup` — PID 2, supervise daemons, restart on crash
-- [ ] `sh` — POSIX-compliant shell (pipes, redirects, variables, globbing)
-- [ ] `login` — basic auth against `/etc/passwd`
-- [ ] `getty` — spawn shell on VirtIO-console
+* [x] UEFI entry — x86_64 COFF entry point (`boot.S`)
+* [x] Early serial output — UART `0x3F8` (`serial.c`)
+* [x] Build pipeline — Clang + `lld-link`
+* [x] QEMU/OVMF launch (`boot.py`)
+* [ ] GDT setup
+* [ ] IDT setup + basic exception handlers
+* [ ] UEFI memory map parsing
+* [ ] Paging — 4KB pages, initial identity map
+* [ ] Physical page allocator
+* [ ] Timer interrupt (PIT or HPET via QEMU)
+* [ ] Minimal preemptive scheduler
+* [ ] Syscall entry (syscall/sysret or int)
+* [ ] ELF loader (static binaries)
+* [ ] Run first usermode program
 
-### Phase 4: Coreutils
-- [ ] `cat`, `echo`, `pwd`, `cd`, `env`, `export`
-- [ ] `ls` (`-l`, `-a`, `-R`)
-- [ ] `cp` (`-r`, `-v`), `mv`, `rm` (`-r`, `-f`), `mkdir` (`-p`)
-- [ ] `chmod`, `chown`
-- [ ] `grep` (`-r`, `-i`, `-v`)
-- [ ] `sed` — basic substitution
-- [ ] `awk` — minimal pattern scanning
+### Phase 2: Core Kernel
+
+Focus: make the kernel usable, not just alive.
+
+* [ ] Virtual memory refinement (move beyond pure identity map)
+* [ ] Kernel heap
+* [ ] Buddy allocator
+* [ ] Slab allocator
+* [ ] File descriptor layer
+* [ ] Basic VFS (inodes, dentries)
+
+### Phase 3: Storage
+
+Focus: persistent state.
+
+* [ ] VirtIO-block driver
+* [ ] Minimal filesystem (simple, stable baseline)
+* [ ] `mkfs` utility
+* [ ] Mount root filesystem
+
+*(Optional, later)*
+
+* [ ] `/p/fs` — log-structured, CoW design
+
+### Phase 4: Userspace
+
+Focus: a usable system.
+
+* [ ] `pinit` — PID 1
+* [ ] `psup` — service supervisor
+* [ ] `sh` — basic shell
+* [ ] `login` / `getty`
+* [ ] Core utilities (`cat`, `ls`, `cp`, `rm`, etc.)
 
 ### Phase 5: Networking
-- [ ] VirtIO-net driver
-- [ ] `netd` — userspace TCP/IP stack (ARP, IPv4, UDP, TCP)
-- [ ] DHCP client in `netd`
-- [ ] `ifconfig` / `ip`
-- [ ] `ping` — ICMP echo
-- [ ] `sshd` — port Dropbear or OpenSSH (musl-linked)
-- [ ] `wget` / `curl` — minimal HTTP client
 
-### Phase 6: Polish
-- [ ] `logd` — syslog-compatible daemon
-- [ ] `cron` — task scheduler
-- [ ] `ps`, `top`, `kill`, `nice`
-- [ ] `man` — manual page viewer
-- [ ] Kernel size pass (`-Os`, LTO)
-- [ ] Final cleanup and documentation
+Focus: connectivity.
+
+* [ ] VirtIO-net driver
+* [ ] `netd` — userspace TCP/IP stack
+* [ ] DHCP client
+* [ ] Basic tools (`ping`, `ip/ifconfig`)
+* [ ] SSH (Dropbear/OpenSSH, musl-linked)
+* [ ] Minimal HTTP client (`curl`/`wget`)
+
+### Phase 6: System Polish
+
+* [ ] `logd` — logging daemon
+* [ ] `cron`
+* [ ] Process tools (`ps`, `top`, `kill`, `nice`)
+* [ ] `man` viewer
+* [ ] Size optimization (`-Os`, LTO)
+* [ ] Documentation cleanup
 
 ## License
 GPLv3. See [`LICENSE`](LICENSE).
