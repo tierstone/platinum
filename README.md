@@ -44,7 +44,22 @@ Focus: reach stable usermode execution.
 * [x] QEMU/OVMF launch (`boot.py`)
 * [x] ExitBootServices — leave EFI and enter kernel context
 * [x] GDT setup
+* [x] IDT setup + basic except* [x] UEFI entry — x86_64 COFF entry point (`boot.S`)
+* [x] Early serial output — UART `0x3F8` (`serial.c`)
+* [x] Build pipeline — Clang + `lld-link`
+* [x] QEMU/OVMF launch (`boot.py`)
+* [x] ExitBootServices — leave EFI and enter kernel context
+* [x] GDT setup
 * [x] IDT setup + basic exception handlers
+* [x] Paging — initial identity map using 2 MiB pages
+* [ ] UEFI memory map parsing
+* [ ] Paging — 4KB pages
+* [ ] Physical page allocator
+* [ ] Timer interrupt (PIT or HPET via QEMU)
+* [ ] Minimal preemptive scheduler
+* [ ] Syscall entry (syscall/sysret or int)
+* [ ] ELF loader (static binaries)
+* [ ] Run first usermode programion handlers
 * [ ] UEFI memory map parsing
 * [ ] Paging — 4KB pages, initial identity map
 * [ ] Physical page allocator
