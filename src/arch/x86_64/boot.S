@@ -3,6 +3,7 @@
 .global arch_load_idt
 .global arch_load_cr3
 .global arch_enable_interrupts
+.global arch_task_enter
 .global arch_halt_forever
 .global arch_isr_invalid_opcode
 .global arch_irq0_entry
@@ -38,6 +39,25 @@ arch_enable_interrupts:
     sti
     ret
 
+arch_task_enter:
+    movq %rcx, %rsp
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %r11
+    popq %r10
+    popq %r9
+    popq %r8
+    popq %rdi
+    popq %rsi
+    popq %rbp
+    popq %rdx
+    popq %rcx
+    popq %rbx
+    popq %rax
+    iretq
+
 arch_halt_forever:
     cli
 1:
@@ -52,7 +72,39 @@ arch_isr_invalid_opcode:
     jmp arch_halt_forever
 
 arch_irq0_entry:
+    pushq %rax
+    pushq %rbx
+    pushq %rcx
+    pushq %rdx
+    pushq %rbp
+    pushq %rsi
+    pushq %rdi
+    pushq %r8
+    pushq %r9
+    pushq %r10
+    pushq %r11
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
+    movq %rsp, %rcx
     subq $40, %rsp
     call kernel_timer_tick
     addq $40, %rsp
+    movq %rax, %rsp
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %r11
+    popq %r10
+    popq %r9
+    popq %r8
+    popq %rdi
+    popq %rsi
+    popq %rbp
+    popq %rdx
+    popq %rcx
+    popq %rbx
+    popq %rax
     iretq

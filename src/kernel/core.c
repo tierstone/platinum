@@ -4,6 +4,7 @@
 #include "kernel/memmap.h"
 #include "kernel/paging.h"
 #include "kernel/palloc.h"
+#include "kernel/sched.h"
 #include "drivers/pic.h"
 #include "drivers/pit.h"
 #include "drivers/serial.h"
@@ -54,44 +55,16 @@ static void write_decimal_u32(uint32_t value) {
     }
 }
 
-static void write_decimal_u64(uint64_t value) {
-    char digits[32];
-    size_t count = 0u;
-    uint64_t current = value;
-
-    if (current == 0u) {
-        serial_write("0", 1u);
-        return;
-    }
-
-    while (current != 0u) {
-        digits[count] = (char)('0' + (current % 10u));
-        current /= 10u;
-        ++count;
-    }
-
-    while (count != 0u) {
-        --count;
-        serial_write(&digits[count], 1u);
-    }
-}
-
 void kernel_trap(uint32_t vector) {
     write_text("trap ");
     write_decimal_u32(vector);
     write_text("\r\n");
 }
 
-void kernel_timer_tick(void) {
+uintptr_t kernel_timer_tick(uintptr_t current_rsp) {
     ++kernel_ticks;
-
-    if ((kernel_ticks % 100u) == 0u) {
-        write_text("tick ");
-        write_decimal_u64(kernel_ticks);
-        write_text("\r\n");
-    }
-
     pic_eoi(0u);
+    return sched_tick(current_rsp);
 }
 
 void kernel_main(void *image_handle, void *system_table) {
@@ -129,6 +102,9 @@ void kernel_main(void *image_handle, void *system_table) {
 
     pit_initialize(100u);
     write_line("pit ok");
+
+    sched_initialize();
+    write_line("sched ok");
 
     arch_enable_interrupts();
     write_line("irq on");
