@@ -1,6 +1,7 @@
 .global efi_main
 .global arch_load_gdt
 .global arch_load_idt
+.global arch_load_cr3
 .global arch_halt_forever
 .global arch_isr_invalid_opcode
 
@@ -25,6 +26,10 @@ arch_load_gdt:
 
 arch_load_idt:
     lidt (%rcx)
+    ret
+
+arch_load_cr3:
+    movq %rcx, %cr3
     ret
 
 arch_halt_forever:
