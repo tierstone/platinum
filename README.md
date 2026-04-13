@@ -44,7 +44,7 @@ Focus: reach stable usermode execution.
 * [x] QEMU/OVMF launch (`boot.py`)
 * [x] ExitBootServices — leave EFI and enter kernel context
 * [x] GDT setup
-* [ ] IDT setup + basic exception handlers
+* [x] IDT setup + basic exception handlers
 * [ ] UEFI memory map parsing
 * [ ] Paging — 4KB pages, initial identity map
 * [ ] Physical page allocator
