@@ -42,7 +42,8 @@ Focus: reach stable usermode execution.
 * [x] Early serial output — UART `0x3F8` (`serial.c`)
 * [x] Build pipeline — Clang + `lld-link`
 * [x] QEMU/OVMF launch (`boot.py`)
-* [ ] GDT setup
+* [x] ExitBootServices — leave EFI and enter kernel context
+* [x] GDT setup
 * [ ] IDT setup + basic exception handlers
 * [ ] UEFI memory map parsing
 * [ ] Paging — 4KB pages, initial identity map
