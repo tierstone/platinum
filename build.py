@@ -13,6 +13,7 @@ C_SOURCES = [
     os.path.join(SRC_DIR, "kernel", "core.c"),
     os.path.join(SRC_DIR, "kernel", "gdt.c"),
     os.path.join(SRC_DIR, "kernel", "idt.c"),
+    os.path.join(SRC_DIR, "kernel", "memmap.c"),
     os.path.join(SRC_DIR, "kernel", "paging.c"),
     os.path.join(SRC_DIR, "drivers", "serial.c"),
 ]
