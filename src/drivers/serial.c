@@ -1,7 +1,7 @@
 #include "serial.h"
 
-#include <stddef.h>
 #include <stdint.h>
+#include <stddef.h>
 
 enum {
     serial_com1 = 0x3F8u
@@ -18,25 +18,18 @@ static uint8_t io_read8(uint16_t port) {
 }
 
 void serial_init(void) {
-    io_write8((uint16_t)(serial_com1 + 1u), 0x00u);
-    io_write8((uint16_t)(serial_com1 + 3u), 0x80u);
-    io_write8((uint16_t)(serial_com1 + 0u), 0x03u);
-    io_write8((uint16_t)(serial_com1 + 1u), 0x00u);
-    io_write8((uint16_t)(serial_com1 + 3u), 0x03u);
-    io_write8((uint16_t)(serial_com1 + 2u), 0xC7u);
-    io_write8((uint16_t)(serial_com1 + 4u), 0x0Bu);
+    io_write8(serial_com1 + 1, 0x00);
+    io_write8(serial_com1 + 3, 0x80);
+    io_write8(serial_com1 + 0, 0x03);
+    io_write8(serial_com1 + 1, 0x00);
+    io_write8(serial_com1 + 3, 0x03);
+    io_write8(serial_com1 + 2, 0xC7);
+    io_write8(serial_com1 + 4, 0x0B);
 }
 
 void serial_write(const char *buffer, size_t length) {
-    size_t index;
-
-    if (buffer == NULL) {
-        return;
-    }
-
-    for (index = 0u; index < length; ++index) {
-        while ((io_read8((uint16_t)(serial_com1 + 5u)) & 0x20u) == 0u) {
-        }
-        io_write8(serial_com1, (uint8_t)buffer[index]);
+    for (size_t i = 0; i < length; i++) {
+        while ((io_read8(serial_com1 + 5) & 0x20) == 0);
+        io_write8(serial_com1, (uint8_t)buffer[i]);
     }
 }

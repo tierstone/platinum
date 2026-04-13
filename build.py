@@ -10,8 +10,9 @@ SRC_DIR = "src"
 TARGET_EFI = os.path.join(BUILD_DIR, "kernel.efi")
 
 C_SOURCES = [
-    os.path.join(SRC_DIR, "kernel.c"),
-    os.path.join(SRC_DIR, "drivers", "serial.c"),
+    os.path.join("src", "kernel", "core.c"),
+    os.path.join("src", "kernel", "gdt.c"),
+    os.path.join("src", "drivers", "serial.c"),
 ]
 
 ASM_SOURCES = [
