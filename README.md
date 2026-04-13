@@ -57,7 +57,7 @@ Focus: reach stable usermode execution.
 * [x] UEFI memory map parsing
 * [x] Paging — initial identity map using 2 MiB pages
 * [x] Physical page allocator — bootstrap bump allocator
-* [ ] Physical page allocator — reusable free-list or bitmap
+* [x] Physical page allocator — reusable free-list
 * [ ] Paging — 4KB pages
 * [ ] Timer interrupt (PIT or HPET via QEMU)
 * [ ] Minimal preemptive scheduler
