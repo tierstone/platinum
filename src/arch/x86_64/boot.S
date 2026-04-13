@@ -2,8 +2,10 @@
 .global arch_load_gdt
 .global arch_load_idt
 .global arch_load_cr3
+.global arch_enable_interrupts
 .global arch_halt_forever
 .global arch_isr_invalid_opcode
+.global arch_irq0_entry
 
 efi_main:
     subq $40, %rsp
@@ -32,6 +34,10 @@ arch_load_cr3:
     movq %rcx, %cr3
     ret
 
+arch_enable_interrupts:
+    sti
+    ret
+
 arch_halt_forever:
     cli
 1:
@@ -44,3 +50,9 @@ arch_isr_invalid_opcode:
     call kernel_trap
     addq $40, %rsp
     jmp arch_halt_forever
+
+arch_irq0_entry:
+    subq $40, %rsp
+    call kernel_timer_tick
+    addq $40, %rsp
+    iretq

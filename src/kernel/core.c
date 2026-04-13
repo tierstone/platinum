@@ -4,10 +4,14 @@
 #include "kernel/memmap.h"
 #include "kernel/paging.h"
 #include "kernel/palloc.h"
+#include "drivers/pic.h"
+#include "drivers/pit.h"
 #include "drivers/serial.h"
 
 #include <stddef.h>
 #include <stdint.h>
+
+static volatile uint64_t kernel_ticks;
 
 static size_t string_length(const char *text) {
     size_t length = 0u;
@@ -50,14 +54,50 @@ static void write_decimal_u32(uint32_t value) {
     }
 }
 
+static void write_decimal_u64(uint64_t value) {
+    char digits[32];
+    size_t count = 0u;
+    uint64_t current = value;
+
+    if (current == 0u) {
+        serial_write("0", 1u);
+        return;
+    }
+
+    while (current != 0u) {
+        digits[count] = (char)('0' + (current % 10u));
+        current /= 10u;
+        ++count;
+    }
+
+    while (count != 0u) {
+        --count;
+        serial_write(&digits[count], 1u);
+    }
+}
+
 void kernel_trap(uint32_t vector) {
     write_text("trap ");
     write_decimal_u32(vector);
     write_text("\r\n");
 }
 
+void kernel_timer_tick(void) {
+    ++kernel_ticks;
+
+    if ((kernel_ticks % 100u) == 0u) {
+        write_text("tick ");
+        write_decimal_u64(kernel_ticks);
+        write_text("\r\n");
+    }
+
+    pic_eoi(0u);
+}
+
 void kernel_main(void *image_handle, void *system_table) {
     struct efi_system_table *system = (struct efi_system_table *)system_table;
+
+    kernel_ticks = 0u;
 
     serial_init();
     write_line("kernel_main");
@@ -75,6 +115,7 @@ void kernel_main(void *image_handle, void *system_table) {
     write_line("gdt ok");
 
     idt_initialize();
+    idt_set_irq0_gate();
     write_line("idt ok");
 
     palloc_initialize();
@@ -83,7 +124,18 @@ void kernel_main(void *image_handle, void *system_table) {
     paging_initialize();
     write_line("paging 4k ok");
 
+    pic_initialize();
+    write_line("pic ok");
+
+    pit_initialize(100u);
+    write_line("pit ok");
+
+    arch_enable_interrupts();
+    write_line("irq on");
+
     write_line("hello from /p/OS");
 
-    arch_halt_forever();
+    for (;;) {
+        __asm__ __volatile__("hlt");
+    }
 }

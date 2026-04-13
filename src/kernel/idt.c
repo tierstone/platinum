@@ -70,6 +70,10 @@ void idt_initialize(void) {
     arch_load_idt(&idtr[0]);
 }
 
+void idt_set_irq0_gate(void) {
+    idt_set_gate(32u, arch_irq0_entry);
+}
+
 uintptr_t idt_reserved_begin(void) {
     uintptr_t a = (uintptr_t)&idt[0];
     uintptr_t b = (uintptr_t)&idtr[0];

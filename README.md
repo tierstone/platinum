@@ -57,7 +57,7 @@ Focus: reach stable usermode execution.
 * [x] UEFI memory map parsing
 * [x] Paging — 4KB pages, initial identity map
 * [x] Physical page allocator — reusable free-list
-* [ ] Timer interrupt (PIT or HPET via QEMU)
+* [x] Timer interrupt (PIT via QEMU)
 * [ ] Minimal preemptive scheduler
 * [ ] Syscall entry (syscall/sysret or int)
 * [ ] ELF loader (static binaries)
