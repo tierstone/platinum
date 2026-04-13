@@ -1,5 +1,6 @@
 #include "kernel/core.h"
 #include "kernel/gdt.h"
+#include "kernel/idt.h"
 #include "drivers/serial.h"
 
 #include <stddef.h>
@@ -19,16 +20,11 @@ struct efi_table_header {
 struct efi_boot_services;
 
 typedef efi_status_t (*efi_get_memory_map_t)(
-    size_t *memory_map_size,
-    void *memory_map,
-    size_t *map_key,
-    size_t *descriptor_size,
-    uint32_t *descriptor_version
+    size_t *, void *, size_t *, size_t *, uint32_t *
 );
 
 typedef efi_status_t (*efi_exit_boot_services_t)(
-    efi_handle_t image_handle,
-    size_t map_key
+    efi_handle_t, size_t
 );
 
 struct efi_boot_services {
@@ -76,77 +72,80 @@ struct efi_system_table {
     struct efi_boot_services *boot_services;
 };
 
-enum {
-    efi_success = 0
-};
+enum { efi_success = 0 };
 
-static const efi_status_t efi_buffer_too_small = 0x8000000000000005ULL;
+static uint8_t memmap[16384];
 
-static uint8_t efi_memory_map_buffer[16384];
-
-static size_t string_length(const char *text) {
-    size_t length = 0u;
-    while (text[length] != '\0') {
-        ++length;
-    }
-    return length;
+static size_t strlen2(const char *s) {
+    size_t n = 0;
+    while (s[n]) n++;
+    return n;
 }
 
-static void write_line(const char *text) {
-    serial_write(text, string_length(text));
-    serial_write("\r\n", 2u);
+static void print(const char *s) {
+    serial_write(s, strlen2(s));
 }
 
-static int exit_boot_services_minimal(efi_handle_t image_handle, struct efi_system_table *system_table) {
-    struct efi_boot_services *bs = system_table->boot_services;
-    size_t size = sizeof(efi_memory_map_buffer);
-    size_t key = 0u;
-    size_t desc_size = 0u;
-    uint32_t desc_ver = 0u;
-    efi_status_t status;
+static void println(const char *s) {
+    print(s);
+    serial_write("\r\n", 2);
+}
 
-    status = bs->get_memory_map(&size, efi_memory_map_buffer, &key, &desc_size, &desc_ver);
-    if (status != efi_success) {
-        return 0;
+static int exit_bs(efi_handle_t h, struct efi_system_table *st) {
+    struct efi_boot_services *bs = st->boot_services;
+    size_t sz = sizeof(memmap), key, ds;
+    uint32_t dv;
+    if (bs->get_memory_map(&sz, memmap, &key, &ds, &dv) != efi_success) return 0;
+    if (bs->exit_boot_services(h, key) == efi_success) return 1;
+    sz = sizeof(memmap);
+    if (bs->get_memory_map(&sz, memmap, &key, &ds, &dv) != efi_success) return 0;
+    return bs->exit_boot_services(h, key) == efi_success;
+}
+
+void kernel_trap(uint32_t v) {
+    char buf[10];
+    size_t i = 0;
+
+    if (v == 0) {
+        serial_write("trap 0\r\n", 8);
+        return;
     }
 
-    status = bs->exit_boot_services(image_handle, key);
-    if (status == efi_success) {
-        return 1;
+    while (v) {
+        buf[i++] = (char)('0' + (v % 10));
+        v /= 10;
     }
 
-    size = sizeof(efi_memory_map_buffer);
+    serial_write("trap ", 5);
 
-    status = bs->get_memory_map(&size, efi_memory_map_buffer, &key, &desc_size, &desc_ver);
-    if (status != efi_success) {
-        return 0;
+    while (i) {
+        serial_write(&buf[--i], 1);
     }
 
-    status = bs->exit_boot_services(image_handle, key);
-    if (status != efi_success) {
-        return 0;
-    }
-
-    return 1;
+    serial_write("\r\n", 2);
 }
 
 void kernel_main(void *image_handle, void *system_table) {
     struct efi_system_table *st = (struct efi_system_table *)system_table;
 
     serial_init();
-    write_line("kernel_main");
-    write_line("efi live");
+    println("kernel_main");
+    println("efi live");
 
-    if (!exit_boot_services_minimal((efi_handle_t)image_handle, st)) {
-        write_line("exit fail");
+    if (!exit_bs((efi_handle_t)image_handle, st)) {
+        println("exit fail");
         arch_halt_forever();
     }
 
-    write_line("exit ok");
-    write_line("hello from /p/OS");
+    println("exit ok");
 
     gdt_initialize();
-    write_line("gdt ok");
+    println("gdt ok");
+
+    idt_initialize();
+    println("idt ok");
+
+    __asm__ __volatile__("ud2");
 
     arch_halt_forever();
 }
