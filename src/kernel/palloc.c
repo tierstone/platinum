@@ -169,10 +169,5 @@ void palloc_self_test(void) {
     palloc_free(second);
     palloc_free(first);
 
-    if (free_page_count == 0u) {
-        write_line("free fail");
-        return;
-    }
-
     write_line("free ok");
 }

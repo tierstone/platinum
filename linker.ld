@@ -1,17 +1,34 @@
 ENTRY(efi_main)
-SECTIONS {
-    . = 0x100000;
-    .text : {
-        *(.text*)
+
+SECTIONS
+{
+    . = ALIGN(4096);
+    __kernel_start = .;
+
+    .text : ALIGN(4096) {
+        __text_start = .;
+        *(.text .text.*)
+        __text_end = .;
     }
-    .rodata : {
-        *(.rodata*)
+
+    .rodata : ALIGN(4096) {
+        __rodata_start = .;
+        *(.rodata .rodata.*)
+        __rodata_end = .;
     }
-    .data : {
-        *(.data*)
+
+    .data : ALIGN(4096) {
+        __data_start = .;
+        *(.data .data.*)
+        __data_end = .;
     }
-    .bss : {
-        *(.bss*)
+
+    .bss : ALIGN(4096) {
+        __bss_start = .;
+        *(.bss .bss.*)
         *(COMMON)
+        __bss_end = .;
     }
+
+    __kernel_end = .;
 }
