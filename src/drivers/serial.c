@@ -1,27 +1,42 @@
 #include "serial.h"
-#include <stdint.h>
+
 #include <stddef.h>
-#define COM1 0x3F8
-static void serial_out(uint16_t port, uint8_t val) {
-    __asm__ __volatile__ ("outb %0, %1" : : "a"(val), "Nd"(port));
+#include <stdint.h>
+
+enum {
+    serial_com1 = 0x3F8u
+};
+
+static void io_write8(uint16_t port, uint8_t value) {
+    __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
 }
-static uint8_t serial_in(uint16_t port) {
-    uint8_t ret;
-    __asm__ __volatile__ ("inb %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
+
+static uint8_t io_read8(uint16_t port) {
+    uint8_t value;
+    __asm__ __volatile__("inb %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
 }
+
 void serial_init(void) {
-    serial_out(COM1 + 1, 0x00);
-    serial_out(COM1 + 3, 0x80);
-    serial_out(COM1 + 0, 0x03);
-    serial_out(COM1 + 1, 0x00);
-    serial_out(COM1 + 3, 0x03);
-    serial_out(COM1 + 2, 0xC7);
-    serial_out(COM1 + 4, 0x0B);
+    io_write8((uint16_t)(serial_com1 + 1u), 0x00u);
+    io_write8((uint16_t)(serial_com1 + 3u), 0x80u);
+    io_write8((uint16_t)(serial_com1 + 0u), 0x03u);
+    io_write8((uint16_t)(serial_com1 + 1u), 0x00u);
+    io_write8((uint16_t)(serial_com1 + 3u), 0x03u);
+    io_write8((uint16_t)(serial_com1 + 2u), 0xC7u);
+    io_write8((uint16_t)(serial_com1 + 4u), 0x0Bu);
 }
-void serial_write(const char *buf, size_t count) {
-    for (size_t i = 0; i < count; i++) {
-        while ((serial_in(COM1 + 5) & 0x20) == 0);
-        serial_out(COM1, buf[i]);
+
+void serial_write(const char *buffer, size_t length) {
+    size_t index;
+
+    if (buffer == NULL) {
+        return;
+    }
+
+    for (index = 0u; index < length; ++index) {
+        while ((io_read8((uint16_t)(serial_com1 + 5u)) & 0x20u) == 0u) {
+        }
+        io_write8(serial_com1, (uint8_t)buffer[index]);
     }
 }

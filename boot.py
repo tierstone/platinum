@@ -13,11 +13,11 @@ EFI_BIN = "build/kernel.efi"
 
 def check_prerequisites():
     if not os.path.isfile(OVMF_CODE):
-        sys.exit(f"Missing firmware: {OVMF_CODE}")
+        sys.exit("Missing firmware: " + OVMF_CODE)
     if not os.path.isfile(EFI_BIN):
-        sys.exit(f"Missing kernel: {EFI_BIN}. Run python3 build.py all")
+        sys.exit("Missing kernel: " + EFI_BIN + ". Run python3 build.py all")
     if not os.path.isfile(OVMF_VARS_SRC):
-        sys.exit(f"Missing NVRAM template: {OVMF_VARS_SRC}")
+        sys.exit("Missing NVRAM template: " + OVMF_VARS_SRC)
 
 def prepare_vars():
     if not os.path.exists(OVMF_VARS_DST):
@@ -26,28 +26,30 @@ def prepare_vars():
 def prepare_fat_drive():
     if os.path.exists(FAT_ROOT):
         shutil.rmtree(FAT_ROOT)
-    boot_dir = os.path.join(FAT_ROOT, "efi", "boot")
+
+    boot_dir = os.path.join(FAT_ROOT, "EFI", "BOOT")
     os.makedirs(boot_dir, exist_ok=True)
-    shutil.copy2(EFI_BIN, os.path.join(boot_dir, "bootx64.efi"))
-    with open(os.path.join(FAT_ROOT, "startup.nsh"), "w") as script:
-        script.write("FS0:\ncd efi\\boot\nbootx64.efi\n")
+
+    shutil.copy2(EFI_BIN, os.path.join(boot_dir, "BOOTX64.EFI"))
 
 def launch_qemu():
     check_prerequisites()
     prepare_vars()
     prepare_fat_drive()
+
     command = [
         QEMU_BIN,
         "-machine", "q35",
-        "-m", "2G",
-        "-drive", f"if=pflash,format=raw,readonly=on,file={OVMF_CODE}",
-        "-drive", f"if=pflash,format=raw,file={OVMF_VARS_DST}",
-        "-drive", f"format=raw,file=fat:rw:{FAT_ROOT}",
+        "-m", "512M",
+        "-drive", "if=pflash,format=raw,readonly=on,file=" + OVMF_CODE,
+        "-drive", "if=pflash,format=raw,file=" + OVMF_VARS_DST,
+        "-drive", "format=raw,file=fat:rw:" + FAT_ROOT,
         "-nographic",
         "-serial", "mon:stdio"
     ]
+
     try:
-        subprocess.run(command)
+        subprocess.run(command, check=False)
     except KeyboardInterrupt:
         sys.exit(0)
 
