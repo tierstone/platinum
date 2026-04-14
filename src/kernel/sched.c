@@ -70,18 +70,45 @@ static uintptr_t task_build_stack(void (*entry)(void))
     return (uintptr_t)sp;
 }
 
+static int task_create(task_t *task, void (*entry)(void))
+{
+    uintptr_t rsp;
+
+    rsp = task_build_stack(entry);
+    if (rsp == 0u) {
+        task->rsp = 0u;
+        task->state = TASK_UNUSED;
+        return 0;
+    }
+
+    task->rsp = rsp;
+    task->state = TASK_RUNNABLE;
+    return 1;
+}
+
 void sched_initialize(void)
 {
     worker_counter = 0u;
-
-    task0.rsp = task_build_stack(task_idle);
-    task0.state = TASK_RUNNABLE;
-
-    task1.rsp = task_build_stack(task_worker);
-    task1.state = TASK_RUNNABLE;
-
     current = 0;
     sched_started = 0;
+
+    task0.rsp = 0u;
+    task0.state = TASK_UNUSED;
+
+    task1.rsp = 0u;
+    task1.state = TASK_UNUSED;
+
+    if (!task_create(&task0, task_idle)) {
+        for (;;) {
+            __asm__ __volatile__("cli; hlt");
+        }
+    }
+
+    if (!task_create(&task1, task_worker)) {
+        for (;;) {
+            __asm__ __volatile__("cli; hlt");
+        }
+    }
 }
 
 uintptr_t sched_tick(uintptr_t current_rsp)
