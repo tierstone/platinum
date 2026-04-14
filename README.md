@@ -47,7 +47,7 @@ python3 boot.py
 
 Focus: reach stable usermode execution.
 
-Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`) work under QEMU. An optional disabled-by-default scheduled first user task can enter usermode, survive timer preemption, and keep running with repeated syscalls.
+Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`, `exit`) work under QEMU. An optional disabled-by-default scheduled first user C task can enter usermode, survive timer preemption, and keep running with repeated syscalls.
 
 * [x] UEFI entry — x86_64 COFF entry point (`boot.S`)
 * [x] Early serial output — UART `0x3F8` (`serial.c`)
@@ -63,13 +63,14 @@ Current status: timer-driven preemptive kernel threads and basic `int 0x80` sysc
 * [x] Minimal preemptive scheduler
 * [x] Kernel thread context switching
 * [x] Syscall entry via `int 0x80`
+* [x] Shared syscall number definitions
 * [x] First scheduled user task bootstrap
 * [x] Ring3 syscall return + task done state
-* [x] Persistent first user task loop
+* [x] Persistent first user C task loop
 * [ ] ELF loader (static binaries)
 * [ ] Run first usermode program
 
-User task bootstrap note: enabling the current first-user-task path promotes only the selected bootstrap pages inside the identity map to user-accessible before entering ring 3. The user task is scheduler-owned and timer-preempted, but the paging model is still a temporary proof step, not memory isolation.
+User task bootstrap note: enabling the current first-user-task path promotes only the selected bootstrap pages inside the identity map to user-accessible before entering ring 3. The user task is scheduler-owned, timer-preempted, and built from a tiny freestanding C entry with syscall wrappers, but the paging model is still a temporary proof step, not memory isolation.
 
 ### Phase 2: Core Kernel
 

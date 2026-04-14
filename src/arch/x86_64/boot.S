@@ -14,6 +14,8 @@
 .global arch_load_tr
 .global arch_user_init_entry
 
+.equ SYS_EXIT, 3
+
 efi_main:
     subq $40, %rsp
     call kernel_main
@@ -182,27 +184,10 @@ arch_syscall_entry:
     iretq
 
 arch_user_init_entry:
-    movl $'U', %edi
-    movl $0, %eax
+    subq $40, %rsp
+    call user_init_main
+    addq $40, %rsp
+    movl $SYS_EXIT, %eax
     int $0x80
-    movl $2, %eax
-    int $0x80
-    movq %rax, %rbx
-    movl $16, %ecx
-1:
-    movl $2, %eax
-    int $0x80
-    cmpq %rbx, %rax
-    je 1b
-    movq %rax, %rbx
-    subq $1, %rcx
-    jne 1b
-    movl $16, %ecx
-    movl $'u', %edi
-    movl $0, %eax
-    int $0x80
-    movl $1, %eax
-    int $0x80
-    jmp 1b
 2:
     jmp 2b

@@ -5,6 +5,7 @@
 #include "kernel/paging.h"
 #include "kernel/palloc.h"
 #include "kernel/sched.h"
+#include "common/syscall.h"
 #include "drivers/pic.h"
 #include "drivers/pit.h"
 #include "drivers/serial.h"
@@ -35,6 +36,9 @@ struct syscall_frame {
 
 static volatile uint64_t kernel_ticks;
 static const int user_init_enabled = 0;
+
+void user_init_main(void);
+
 static size_t string_length(const char *text) {
     size_t length = 0u;
 
@@ -130,24 +134,24 @@ uintptr_t kernel_timer_tick(uintptr_t current_rsp) {
 uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
     struct syscall_frame *frame = (struct syscall_frame *)(void *)current_rsp;
 
-    if (frame->rax == 0u) {
+    if (frame->rax == SYS_PUTC) {
         char ch = (char)(frame->rdi & 0xFFu);
         serial_write(&ch, 1u);
         frame->rax = 0u;
         return current_rsp;
     }
 
-    if (frame->rax == 1u) {
+    if (frame->rax == SYS_YIELD) {
         frame->rax = 0u;
         return sched_tick(current_rsp);
     }
 
-    if (frame->rax == 2u) {
+    if (frame->rax == SYS_GET_TICKS) {
 	frame->rax = kernel_ticks;
 	return current_rsp;
     }
 
-    if (frame->rax == 3u) {
+    if (frame->rax == SYS_EXIT) {
         write_line("ring3 exit");
         frame->rax = 0u;
         return sched_exit_current(current_rsp);
@@ -207,7 +211,7 @@ void kernel_main(void *image_handle, void *system_table) {
     write_line("pit ok");
 
     if (user_init_enabled) {
-        sched_enable_user_task(arch_user_init_entry);
+        sched_enable_user_task(arch_user_init_entry, user_init_main);
     }
 
     sched_initialize();
