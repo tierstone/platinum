@@ -8,7 +8,13 @@ typedef enum task_kind {
     TASK_USER = 1
 } task_kind_t;
 
-void sched_enable_user_task(void (*entry)(void), void (*code)(void));
+struct user_task_bootstrap {
+    void (*trampoline_entry)(void);
+    void (*user_entry)(void);
+    uintptr_t user_stack_top;
+};
+
+void sched_enable_user_task(const struct user_task_bootstrap *bootstrap);
 void sched_initialize(void);
 uintptr_t sched_exit_current(uintptr_t current_rsp);
 uintptr_t sched_tick(uintptr_t current_rsp);

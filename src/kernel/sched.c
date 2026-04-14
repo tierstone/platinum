@@ -23,8 +23,7 @@ static task_t task1;
 static task_t *current;
 static int sched_started;
 static int user_task_enabled;
-static void (*user_task_entry)(void);
-static void (*user_task_code)(void);
+static struct user_task_bootstrap user_task_bootstrap;
 static volatile uint64_t worker_counter;
 
 static task_t *sched_select_next(task_t *previous)
@@ -149,26 +148,30 @@ static uintptr_t task_build_kernel_stack(void (*entry)(void))
     return (uintptr_t)sp;
 }
 
-static uintptr_t task_build_user_stack(void (*entry)(void), void (*code)(void))
+static uintptr_t task_build_user_stack(const struct user_task_bootstrap *bootstrap)
 {
-    uintptr_t page = palloc_alloc();
+    uintptr_t stack_top;
+    uintptr_t stack_page;
     uint64_t *sp;
 
-    if (page == 0u) {
+    stack_top = bootstrap->user_stack_top;
+    if (stack_top == 0u) {
         return 0u;
     }
 
-    paging_mark_user_accessible((uintptr_t)(void *)entry);
-    paging_mark_user_accessible((uintptr_t)(void *)code);
-    paging_mark_user_accessible(page);
+    stack_page = stack_top - 1u;
 
-    sp = (uint64_t *)(page + 4096u);
+    paging_mark_user_accessible((uintptr_t)(void *)bootstrap->trampoline_entry);
+    paging_mark_user_accessible((uintptr_t)(void *)bootstrap->user_entry);
+    paging_mark_user_accessible(stack_page);
+
+    sp = (uint64_t *)stack_top;
 
     *--sp = 0x001Bull;
-    *--sp = (uint64_t)(page + 4096u);
+    *--sp = (uint64_t)stack_top;
     *--sp = 0x0000000000000202ull;
     *--sp = 0x0023ull;
-    *--sp = (uint64_t)(uintptr_t)entry;
+    *--sp = (uint64_t)(uintptr_t)bootstrap->trampoline_entry;
 
     *--sp = 0;
     *--sp = 0;
@@ -207,11 +210,11 @@ static int task_create_kernel(task_t *task, uint32_t id, void (*entry)(void))
     return 1;
 }
 
-static int task_create_user(task_t *task, uint32_t id, void (*entry)(void), void (*code)(void))
+static int task_create_user(task_t *task, uint32_t id, const struct user_task_bootstrap *bootstrap)
 {
     uintptr_t rsp;
 
-    rsp = task_build_user_stack(entry, code);
+    rsp = task_build_user_stack(bootstrap);
     if (rsp == 0u) {
         task->rsp = 0u;
         task->state = TASK_UNUSED;
@@ -225,11 +228,10 @@ static int task_create_user(task_t *task, uint32_t id, void (*entry)(void), void
     return 1;
 }
 
-void sched_enable_user_task(void (*entry)(void), void (*code)(void))
+void sched_enable_user_task(const struct user_task_bootstrap *bootstrap)
 {
     user_task_enabled = 1;
-    user_task_entry = entry;
-    user_task_code = code;
+    user_task_bootstrap = *bootstrap;
 }
 
 void sched_initialize(void)
@@ -255,7 +257,7 @@ void sched_initialize(void)
     }
 
     if (user_task_enabled) {
-        if (!task_create_user(&task1, 1u, user_task_entry, user_task_code)) {
+        if (!task_create_user(&task1, 1u, &user_task_bootstrap)) {
             for (;;) {
                 __asm__ __volatile__("cli; hlt");
             }

@@ -38,6 +38,24 @@ static volatile uint64_t kernel_ticks;
 static const int user_init_enabled = 0;
 
 void user_init_main(void);
+static void write_line(const char *text);
+
+static void configure_first_user_task(void) {
+    uintptr_t user_stack_page;
+    struct user_task_bootstrap bootstrap;
+
+    user_stack_page = palloc_alloc();
+    if (user_stack_page == 0u) {
+        write_line("user stack fail");
+        arch_halt_forever();
+    }
+
+    bootstrap.trampoline_entry = arch_user_init_entry;
+    bootstrap.user_entry = user_init_main;
+    bootstrap.user_stack_top = user_stack_page + 4096u;
+
+    sched_enable_user_task(&bootstrap);
+}
 
 static size_t string_length(const char *text) {
     size_t length = 0u;
@@ -211,7 +229,7 @@ void kernel_main(void *image_handle, void *system_table) {
     write_line("pit ok");
 
     if (user_init_enabled) {
-        sched_enable_user_task(arch_user_init_entry, user_init_main);
+        configure_first_user_task();
     }
 
     sched_initialize();

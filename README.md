@@ -94,7 +94,7 @@ Focus: persistent state.
 
 *(Optional, later)*
 
-* [ ] `/p/fs` — log-structured, CoW design
+* [ ] `/p/FS` — log-structured, CoW design
 
 ### Phase 4: Userspace
 
