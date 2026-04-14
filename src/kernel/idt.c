@@ -37,16 +37,20 @@ static void write_le64(uint8_t *buffer, uint64_t value) {
     buffer[7] = (uint8_t)((value >> 56) & 0xFFu);
 }
 
-static void idt_set_gate(uint8_t vector, void (*handler)(void)) {
+static void idt_set_gate_with_type(uint8_t vector, void (*handler)(void), uint8_t type_attributes) {
     uintptr_t address = (uintptr_t)handler;
 
     idt[vector].offset_low = (uint16_t)(address & 0xFFFFu);
     idt[vector].selector = 0x08u;
     idt[vector].ist = 0u;
-    idt[vector].type_attributes = 0x8Eu;
+    idt[vector].type_attributes = type_attributes;
     idt[vector].offset_mid = (uint16_t)((address >> 16) & 0xFFFFu);
     idt[vector].offset_high = (uint32_t)((address >> 32) & 0xFFFFFFFFu);
     idt[vector].reserved = 0u;
+}
+
+static void idt_set_gate(uint8_t vector, void (*handler)(void)) {
+    idt_set_gate_with_type(vector, handler, 0x8Eu);
 }
 
 void idt_initialize(void) {
@@ -72,6 +76,10 @@ void idt_initialize(void) {
 
 void idt_set_irq0_gate(void) {
     idt_set_gate(32u, arch_irq0_entry);
+}
+
+void idt_set_syscall_gate(void) {
+    idt_set_gate_with_type(128u, arch_syscall_entry, 0xEEu);
 }
 
 uintptr_t idt_reserved_begin(void) {

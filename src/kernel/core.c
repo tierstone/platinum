@@ -12,6 +12,27 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct syscall_frame {
+    uint64_t r15;
+    uint64_t r14;
+    uint64_t r13;
+    uint64_t r12;
+    uint64_t r11;
+    uint64_t r10;
+    uint64_t r9;
+    uint64_t r8;
+    uint64_t rdi;
+    uint64_t rsi;
+    uint64_t rbp;
+    uint64_t rdx;
+    uint64_t rcx;
+    uint64_t rbx;
+    uint64_t rax;
+    uint64_t rip;
+    uint64_t cs;
+    uint64_t rflags;
+};
+
 static volatile uint64_t kernel_ticks;
 
 static size_t string_length(const char *text) {
@@ -96,6 +117,20 @@ uintptr_t kernel_timer_tick(uintptr_t current_rsp) {
     return sched_tick(current_rsp);
 }
 
+uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
+    struct syscall_frame *frame = (struct syscall_frame *)(void *)current_rsp;
+
+    if (frame->rax == 0u) {
+        char ch = (char)(frame->rdi & 0xFFu);
+        serial_write(&ch, 1u);
+        frame->rax = 0u;
+        return current_rsp;
+    }
+
+    frame->rax = (uint64_t)-1;
+    return current_rsp;
+}
+
 void kernel_main(void *image_handle, void *system_table) {
     struct efi_system_table *system = (struct efi_system_table *)system_table;
 
@@ -118,6 +153,7 @@ void kernel_main(void *image_handle, void *system_table) {
 
     idt_initialize();
     idt_set_irq0_gate();
+    idt_set_syscall_gate();
     write_line("idt ok");
 
     palloc_initialize();

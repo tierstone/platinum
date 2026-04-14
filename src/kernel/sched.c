@@ -20,6 +20,28 @@ static task_t *current;
 static int sched_started;
 static volatile uint64_t worker_counter;
 
+static uint64_t task_syscall(uint64_t number, uint64_t arg0)
+{
+    uint64_t result;
+
+    __asm__ __volatile__(
+        "int $0x80"
+        : "=a"(result)
+        : "a"(number), "D"(arg0)
+        : "memory"
+    );
+
+    return result;
+}
+
+static void task_delay(void)
+{
+    volatile uint64_t i;
+
+    for (i = 0u; i < 1000000ull; ++i) {
+    }
+}
+
 static void task_idle(void)
 {
     for (;;) {
@@ -31,6 +53,12 @@ static void task_worker(void)
 {
     for (;;) {
         ++worker_counter;
+
+        if ((worker_counter % 256u) == 0u) {
+            task_syscall(0u, (uint64_t)'S');
+        }
+
+        task_delay();
     }
 }
 
