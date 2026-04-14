@@ -4,7 +4,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef struct task {
+    uintptr_t rsp;
+} task_t;
+
 static uint64_t sched_ticks;
+
+static task_t task0;
+static task_t task1;
+
+static task_t *current;
 
 static size_t string_length(const char *text) {
     size_t length = 0u;
@@ -42,12 +51,22 @@ static void write_decimal_u64(uint64_t value) {
     }
 }
 
+static uintptr_t current_task_rsp;
+
 void sched_initialize(void) {
     sched_ticks = 0u;
+
+    task0.rsp = 0u;
+    task1.rsp = 0u;
+
+    current = &task0;
 }
 
-uintptr_t sched_tick(uintptr_t current_rsp) {
+uintptr_t sched_tick(uintptr_t current_rsp)
+{
     ++sched_ticks;
+
+    current->rsp = current_rsp;
 
     if ((sched_ticks % 100u) == 0u) {
         write_text("sched ");
@@ -55,5 +74,5 @@ uintptr_t sched_tick(uintptr_t current_rsp) {
         write_text("\r\n");
     }
 
-    return current_rsp;
+    return current->rsp;
 }
