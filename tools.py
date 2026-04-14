@@ -11,6 +11,9 @@ ROOT_DIR = Path(__file__).resolve().parent
 SRC_DIR = ROOT_DIR / "src"
 BUILD_DIR = ROOT_DIR / "build"
 TARGET_EFI = BUILD_DIR / "kernel.efi"
+USER_BUILD_DIR = BUILD_DIR / "user"
+USER_PROGRAM_ELF = USER_BUILD_DIR / "init.elf"
+USER_BLOB_C = BUILD_DIR / "generated" / "user_program_blob.c"
 
 OVMF_CODE = Path("/usr/share/edk2-ovmf/OVMF_CODE.fd")
 OVMF_VARS_SRC = Path("/usr/share/edk2-ovmf/OVMF_VARS.fd")
@@ -23,6 +26,7 @@ EFI_BOOT_BIN = EFI_BOOT_DIR / "BOOTX64.EFI"
 QEMU_BIN = "qemu-system-x86_64"
 CLANG_BIN = "clang"
 LLD_LINK_BIN = "lld-link"
+LD_LLD_BIN = "ld.lld"
 
 COMMON_FLAGS = [
     "--target=x86_64-unknown-windows",

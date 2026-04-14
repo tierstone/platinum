@@ -13,6 +13,7 @@
 .global arch_syscall_entry
 .global arch_load_tr
 .global arch_user_init_entry
+.global arch_user_program_entry
 
 .equ SYS_EXIT, 3
 
@@ -184,10 +185,15 @@ arch_syscall_entry:
     iretq
 
 arch_user_init_entry:
-    subq $40, %rsp
     call user_init_main
-    addq $40, %rsp
     movl $SYS_EXIT, %eax
     int $0x80
 2:
     jmp 2b
+
+arch_user_program_entry:
+    call *%r12
+    movl $SYS_EXIT, %eax
+    int $0x80
+3:
+    jmp 3b

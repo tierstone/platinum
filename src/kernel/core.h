@@ -24,5 +24,6 @@ void arch_isr_page_fault(void);
 void arch_irq0_entry(void);
 void arch_syscall_entry(void);
 void arch_user_init_entry(void);
+void arch_user_program_entry(void);
 
 #endif

@@ -1,4 +1,5 @@
 #include "kernel/core.h"
+#include "kernel/elf.h"
 #include "kernel/gdt.h"
 #include "kernel/idt.h"
 #include "kernel/memmap.h"
@@ -36,23 +37,34 @@ struct syscall_frame {
 
 static volatile uint64_t kernel_ticks;
 static const int user_init_enabled = 0;
+static const int user_init_use_elf = 0;
 
 void user_init_main(void);
+extern const uint8_t embedded_user_program_elf[];
+extern const size_t embedded_user_program_elf_size;
 static void write_line(const char *text);
 
 static void configure_first_user_task(void) {
-    uintptr_t user_stack_page;
     struct user_task_bootstrap bootstrap;
 
-    user_stack_page = palloc_alloc();
-    if (user_stack_page == 0u) {
-        write_line("user stack fail");
-        arch_halt_forever();
-    }
+    if (user_init_use_elf) {
+        if (!elf_load_user_image(embedded_user_program_elf, embedded_user_program_elf_size, &bootstrap)) {
+            write_line("user elf fail");
+            arch_halt_forever();
+        }
+    } else {
+        uintptr_t user_stack_page;
 
-    bootstrap.trampoline_entry = arch_user_init_entry;
-    bootstrap.user_entry = user_init_main;
-    bootstrap.user_stack_top = user_stack_page + 4096u;
+        user_stack_page = palloc_alloc();
+        if (user_stack_page == 0u) {
+            write_line("user stack fail");
+            arch_halt_forever();
+        }
+
+        bootstrap.trampoline_entry = arch_user_init_entry;
+        bootstrap.user_entry = user_init_main;
+        bootstrap.user_stack_top = user_stack_page + 4096u;
+    }
 
     sched_enable_user_task(&bootstrap);
 }

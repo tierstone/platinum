@@ -9,8 +9,12 @@ from tools import (
     BUILD_DIR,
     CFLAGS,
     CLANG_BIN,
+    LD_LLD_BIN,
     LLD_LINK_BIN,
     TARGET_EFI,
+    USER_BLOB_C,
+    USER_BUILD_DIR,
+    USER_PROGRAM_ELF,
     ensure_dir,
     object_path_for,
     remove_tree,
@@ -23,12 +27,87 @@ def compile_sources(sources: list[Path], flags: list[str]) -> list[Path]:
     objects: list[Path] = []
 
     for source in sources:
-        output = object_path_for(source)
+        if source.is_relative_to(Path("src").resolve()):
+            output = object_path_for(source)
+        else:
+            output = BUILD_DIR / "generated" / (source.stem + ".o")
         ensure_dir(output.parent)
         run([CLANG_BIN] + flags + ["-c", str(source), "-o", str(output)])
         objects.append(output)
 
     return objects
+
+
+def build_user_program() -> Path:
+    user_source = Path("src/user/init.c")
+    user_object = USER_BUILD_DIR / "init.o"
+    user_linker_script = Path("src/user/link.ld")
+
+    ensure_dir(USER_BUILD_DIR)
+    run([
+        CLANG_BIN,
+        "--target=x86_64-unknown-none-elf",
+        "-ffreestanding",
+        "-fno-builtin",
+        "-fno-stack-protector",
+        "-fno-pic",
+        "-mno-red-zone",
+        "-mno-mmx",
+        "-mno-sse",
+        "-mno-avx",
+        "-fno-asynchronous-unwind-tables",
+        "-fno-unwind-tables",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        f"-I{Path('src').resolve()}",
+        "-std=c11",
+        "-c",
+        str(user_source),
+        "-o",
+        str(user_object),
+    ])
+    run([
+        LD_LLD_BIN,
+        "-nostdlib",
+        "-static",
+        "-T",
+        str(user_linker_script),
+        "-o",
+        str(USER_PROGRAM_ELF),
+        str(user_object),
+    ])
+
+    return USER_PROGRAM_ELF
+
+
+def generate_user_blob_source(user_elf: Path) -> Path:
+    data = user_elf.read_bytes()
+    ensure_dir(USER_BLOB_C.parent)
+
+    lines = [
+        "#include <stddef.h>",
+        "#include <stdint.h>",
+        "",
+        "const uint8_t embedded_user_program_elf[] = {",
+    ]
+
+    index = 0
+    while index < len(data):
+        chunk = data[index:index + 12]
+        lines.append("    " + ", ".join(f"0x{byte:02x}" for byte in chunk) + ",")
+        index += len(chunk)
+
+    lines.extend([
+        "};",
+        "",
+        f"const size_t embedded_user_program_elf_size = {len(data)}u;",
+        "",
+    ])
+
+    USER_BLOB_C.write_text("\n".join(lines), encoding="ascii")
+    return USER_BLOB_C
 
 
 def link_efi(objects: list[Path]) -> None:
@@ -48,12 +127,15 @@ def clean() -> None:
 
 def build() -> None:
     c_sources, asm_sources = source_files()
+    user_elf = build_user_program()
+    generated_blob = generate_user_blob_source(user_elf)
 
     ensure_dir(BUILD_DIR)
 
     objects: list[Path] = []
     objects.extend(compile_sources(c_sources, CFLAGS))
     objects.extend(compile_sources(asm_sources, ASFLAGS))
+    objects.extend(compile_sources([generated_blob], CFLAGS))
     link_efi(objects)
 
     print(f"Output: {TARGET_EFI}")

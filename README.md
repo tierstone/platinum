@@ -47,7 +47,7 @@ python3 boot.py
 
 Focus: reach stable usermode execution.
 
-Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`, `exit`) work under QEMU. An optional disabled-by-default scheduled first user C task can enter usermode, survive timer preemption, and keep running with repeated syscalls.
+Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`, `exit`) work under QEMU. A disabled-by-default first user task path exists and works through the direct in-kernel C bootstrap. Static ELF loader scaffolding also exists, but the embedded-ELF path is not yet proven end-to-end and should still be treated as experimental.
 
 * [x] UEFI entry — x86_64 COFF entry point (`boot.S`)
 * [x] Early serial output — UART `0x3F8` (`serial.c`)
@@ -67,10 +67,11 @@ Current status: timer-driven preemptive kernel threads and basic `int 0x80` sysc
 * [x] First scheduled user task bootstrap
 * [x] Ring3 syscall return + task done state
 * [x] Persistent first user C task loop
+* [ ] Tiny embedded static ELF64 user loader
 * [ ] ELF loader (static binaries)
 * [ ] Run first usermode program
 
-User task bootstrap note: enabling the current first-user-task path promotes only the selected bootstrap pages inside the identity map to user-accessible before entering ring 3. The user task is scheduler-owned, timer-preempted, and built from a tiny freestanding C entry with syscall wrappers, but the paging model is still a temporary proof step, not memory isolation.
+User task bootstrap note: enabling the current first-user-task path promotes only selected pages inside the identity map to user-accessible before entering ring 3. The user task is scheduler-owned and timer-preempted. The current ELF path is still a temporary proof-stage loader for one embedded static ELF64 ET_EXEC image with PT_LOAD segments, and it is not yet a finished userspace loading path. The paging model remains a temporary proof step, not memory isolation.
 
 ### Phase 2: Core Kernel
 

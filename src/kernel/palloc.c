@@ -134,6 +134,26 @@ void palloc_free(uintptr_t page) {
     ++free_page_count;
 }
 
+int palloc_take(uintptr_t page) {
+    struct palloc_node **link;
+
+    page &= ~(page_size - 1u);
+
+    link = &free_list_head;
+    while (*link != NULL) {
+        if ((uintptr_t)(void *)(*link) == page) {
+            struct palloc_node *node = *link;
+            *link = node->next;
+            --free_page_count;
+            return 1;
+        }
+
+        link = &((*link)->next);
+    }
+
+    return 0;
+}
+
 void palloc_self_test(void) {
     uintptr_t first;
     uintptr_t second;
