@@ -12,6 +12,7 @@ void arch_load_gdt(const void *descriptor, uint16_t data_selector);
 void arch_load_idt(const void *descriptor);
 void arch_load_cr3(uint64_t value);
 void arch_enable_interrupts(void);
+void arch_load_tr(uint16_t selector);
 void arch_task_enter(uint64_t rsp);
 void arch_halt_forever(void);
 

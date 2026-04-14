@@ -8,6 +8,7 @@
 .global arch_isr_invalid_opcode
 .global arch_irq0_entry
 .global arch_syscall_entry
+.global arch_load_tr
 
 efi_main:
     subq $40, %rsp
@@ -38,6 +39,10 @@ arch_load_cr3:
 
 arch_enable_interrupts:
     sti
+    ret
+
+arch_load_tr:
+    ltr %cx
     ret
 
 arch_task_enter:
