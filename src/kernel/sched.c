@@ -1,41 +1,36 @@
 #include "kernel/sched.h"
-#include "drivers/serial.h"
 #include "kernel/palloc.h"
 
-#include <stddef.h>
 #include <stdint.h>
+
+typedef enum task_state {
+    TASK_UNUSED = 0,
+    TASK_RUNNABLE = 1,
+    TASK_RUNNING = 2
+} task_state_t;
 
 typedef struct task {
     uintptr_t rsp;
+    task_state_t state;
 } task_t;
 
-static uint64_t sched_ticks;
 static task_t task0;
 static task_t task1;
 static task_t *current;
 static int sched_started;
-
-static void task_delay(void)
-{
-    volatile uint64_t i;
-
-    for (i = 0u; i < 1000000ull; ++i) {
-    }
-}
+static volatile uint64_t worker_counter;
 
 static void task_idle(void)
 {
     for (;;) {
-        serial_write("I", 1u);
-        task_delay();
+        __asm__ __volatile__("hlt");
     }
 }
 
-static void task_test(void)
+static void task_worker(void)
 {
     for (;;) {
-        serial_write("T", 1u);
-        task_delay();
+        ++worker_counter;
     }
 }
 
@@ -75,25 +70,31 @@ static uintptr_t task_build_stack(void (*entry)(void))
     return (uintptr_t)sp;
 }
 
-void sched_initialize(void) {
-    sched_ticks = 0u;
+void sched_initialize(void)
+{
+    worker_counter = 0u;
+
     task0.rsp = task_build_stack(task_idle);
-    task1.rsp = task_build_stack(task_test);
-    current = NULL;
+    task0.state = TASK_RUNNABLE;
+
+    task1.rsp = task_build_stack(task_worker);
+    task1.state = TASK_RUNNABLE;
+
+    current = 0;
     sched_started = 0;
 }
 
 uintptr_t sched_tick(uintptr_t current_rsp)
 {
-    ++sched_ticks;
-
     if (!sched_started) {
         sched_started = 1;
         current = &task0;
+        current->state = TASK_RUNNING;
         return current->rsp;
     }
 
     current->rsp = current_rsp;
+    current->state = TASK_RUNNABLE;
 
     if (current == &task0) {
         current = &task1;
@@ -101,5 +102,11 @@ uintptr_t sched_tick(uintptr_t current_rsp)
         current = &task0;
     }
 
+    current->state = TASK_RUNNING;
     return current->rsp;
+}
+
+uint64_t sched_debug_worker_counter(void)
+{
+    return worker_counter;
 }

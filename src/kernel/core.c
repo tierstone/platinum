@@ -55,6 +55,28 @@ static void write_decimal_u32(uint32_t value) {
     }
 }
 
+static void write_decimal_u64(uint64_t value) {
+    char digits[32];
+    size_t count = 0u;
+    uint64_t current = value;
+
+    if (current == 0u) {
+        serial_write("0", 1u);
+        return;
+    }
+
+    while (current != 0u) {
+        digits[count] = (char)('0' + (current % 10u));
+        current /= 10u;
+        ++count;
+    }
+
+    while (count != 0u) {
+        --count;
+        serial_write(&digits[count], 1u);
+    }
+}
+
 void kernel_trap(uint32_t vector) {
     write_text("trap ");
     write_decimal_u32(vector);
@@ -63,6 +85,13 @@ void kernel_trap(uint32_t vector) {
 
 uintptr_t kernel_timer_tick(uintptr_t current_rsp) {
     ++kernel_ticks;
+
+    if ((kernel_ticks % 100u) == 0u) {
+        write_text("worker ");
+        write_decimal_u64(sched_debug_worker_counter());
+        write_text("\r\n");
+    }
+
     pic_eoi(0u);
     return sched_tick(current_rsp);
 }
