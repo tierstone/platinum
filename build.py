@@ -1,109 +1,65 @@
 #!/usr/bin/env python3
-import os
-import sys
-import shutil
-import subprocess
+from __future__ import annotations
+
 import argparse
+from pathlib import Path
 
-BUILD_DIR = "build"
-SRC_DIR = "src"
-TARGET_EFI = os.path.join(BUILD_DIR, "kernel.efi")
+from tools import (
+    ASFLAGS,
+    BUILD_DIR,
+    CFLAGS,
+    CLANG_BIN,
+    LLD_LINK_BIN,
+    TARGET_EFI,
+    ensure_dir,
+    object_path_for,
+    remove_tree,
+    run,
+    source_files,
+)
 
-C_SOURCES = [
-    os.path.join(SRC_DIR, "kernel", "core.c"),
-    os.path.join(SRC_DIR, "kernel", "gdt.c"),
-    os.path.join(SRC_DIR, "kernel", "idt.c"),
-    os.path.join(SRC_DIR, "kernel", "memmap.c"),
-    os.path.join(SRC_DIR, "kernel", "paging.c"),
-    os.path.join(SRC_DIR, "kernel", "palloc.c"),
-    os.path.join(SRC_DIR, "kernel", "sched.c"),
-    os.path.join(SRC_DIR, "drivers", "pic.c"),
-    os.path.join(SRC_DIR, "drivers", "pit.c"),
-    os.path.join(SRC_DIR, "drivers", "serial.c"),
-]
 
-ASM_SOURCES = [
-    os.path.join(SRC_DIR, "arch", "x86_64", "boot.S"),
-]
+def compile_sources(sources: list[Path], flags: list[str]) -> list[Path]:
+    objects: list[Path] = []
 
-COMMON_FLAGS = [
-    "--target=x86_64-unknown-windows",
-    "-ffreestanding",
-    "-fno-builtin",
-    "-fno-stack-protector",
-    "-fno-pic",
-    "-mno-red-zone",
-    "-mno-mmx",
-    "-mno-sse",
-    "-mno-avx",
-    "-O2",
-    "-Wall",
-    "-Wextra",
-    "-Wpedantic",
-    "-Isrc",
-]
-
-CFLAGS = COMMON_FLAGS + [
-    "-std=c11",
-]
-
-ASFLAGS = COMMON_FLAGS + [
-    "-x",
-    "assembler",
-]
-
-def execute(command):
-    result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode != 0:
-        if result.stdout:
-            sys.stderr.write(result.stdout)
-        if result.stderr:
-            sys.stderr.write(result.stderr)
-        sys.exit(result.returncode)
-
-def object_path_for(source):
-    basename = os.path.splitext(os.path.basename(source))[0]
-    return os.path.join(BUILD_DIR, basename + ".o")
-
-def compile_c_objects():
-    objects = []
-    for source in C_SOURCES:
+    for source in sources:
         output = object_path_for(source)
-        execute(["clang"] + CFLAGS + ["-c", source, "-o", output])
+        ensure_dir(output.parent)
+        run([CLANG_BIN] + flags + ["-c", str(source), "-o", str(output)])
         objects.append(output)
+
     return objects
 
-def compile_asm_objects():
-    objects = []
-    for source in ASM_SOURCES:
-        output = object_path_for(source)
-        execute(["clang"] + ASFLAGS + ["-c", source, "-o", output])
-        objects.append(output)
-    return objects
 
-def link_efi(objects):
-    execute([
-        "lld-link",
+def link_efi(objects: list[Path]) -> None:
+    run([
+        LLD_LINK_BIN,
         "/subsystem:efi_application",
         "/entry:efi_main",
         "/machine:x64",
         "/nodefaultlib",
-        "/out:" + TARGET_EFI,
-    ] + objects)
+        f"/out:{TARGET_EFI}",
+    ] + [str(obj) for obj in objects])
 
-def clean():
-    if os.path.isdir(BUILD_DIR):
-        shutil.rmtree(BUILD_DIR)
 
-def build():
-    os.makedirs(BUILD_DIR, exist_ok=True)
-    objects = []
-    objects.extend(compile_c_objects())
-    objects.extend(compile_asm_objects())
+def clean() -> None:
+    remove_tree(BUILD_DIR)
+
+
+def build() -> None:
+    c_sources, asm_sources = source_files()
+
+    ensure_dir(BUILD_DIR)
+
+    objects: list[Path] = []
+    objects.extend(compile_sources(c_sources, CFLAGS))
+    objects.extend(compile_sources(asm_sources, ASFLAGS))
     link_efi(objects)
-    print("Output:", TARGET_EFI)
 
-def main():
+    print(f"Output: {TARGET_EFI}")
+
+
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("target", choices=["all", "efi", "clean"])
     args = parser.parse_args()
@@ -113,6 +69,7 @@ def main():
         return
 
     build()
+
 
 if __name__ == "__main__":
     main()
