@@ -58,6 +58,10 @@ static void task_worker(void)
             task_syscall(0u, (uint64_t)'S');
         }
 
+        if ((worker_counter % 64u) == 0u) {
+            task_syscall(1u, 0u);
+        }
+
         task_delay();
     }
 }
