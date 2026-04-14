@@ -14,27 +14,9 @@ enum {
     gdt_entry_count = 7
 };
 
-struct tss64 {
-    uint32_t reserved0;
-    uint64_t rsp0;
-    uint64_t rsp1;
-    uint64_t rsp2;
-    uint64_t reserved1;
-    uint64_t ist1;
-    uint64_t ist2;
-    uint64_t ist3;
-    uint64_t ist4;
-    uint64_t ist5;
-    uint64_t ist6;
-    uint64_t ist7;
-    uint64_t reserved2;
-    uint16_t reserved3;
-    uint16_t io_map_base;
-};
-
 static uint64_t gdt[gdt_entry_count];
 static uint8_t gdtr[10];
-static struct tss64 tss;
+static uint8_t tss[104];
 
 static void write_le16(uint8_t *buffer, uint16_t value) {
     buffer[0] = (uint8_t)(value & 0xFFu);
@@ -50,6 +32,14 @@ static void write_le64(uint8_t *buffer, uint64_t value) {
     buffer[5] = (uint8_t)((value >> 40) & 0xFFu);
     buffer[6] = (uint8_t)((value >> 48) & 0xFFu);
     buffer[7] = (uint8_t)((value >> 56) & 0xFFu);
+}
+
+static void zero_tss(void) {
+    size_t index;
+
+    for (index = 0u; index < sizeof(tss); ++index) {
+        tss[index] = 0u;
+    }
 }
 
 static uint64_t gdt_make_code_data_descriptor(uint32_t access, uint32_t flags) {
@@ -88,29 +78,16 @@ void gdt_initialize(void) {
         gdt[index] = 0u;
     }
 
-    tss.reserved0 = 0u;
-    tss.rsp0 = 0u;
-    tss.rsp1 = 0u;
-    tss.rsp2 = 0u;
-    tss.reserved1 = 0u;
-    tss.ist1 = 0u;
-    tss.ist2 = 0u;
-    tss.ist3 = 0u;
-    tss.ist4 = 0u;
-    tss.ist5 = 0u;
-    tss.ist6 = 0u;
-    tss.ist7 = 0u;
-    tss.reserved2 = 0u;
-    tss.reserved3 = 0u;
-    tss.io_map_base = (uint16_t)sizeof(tss);
+    zero_tss();
+    write_le16(&tss[102], (uint16_t)sizeof(tss));
 
     gdt[gdt_null_index] = 0x0000000000000000ull;
     gdt[gdt_kernel_code_index] = gdt_make_code_data_descriptor(0x9Au, 0x0Au);
-    gdt[gdt_kernel_data_index] = gdt_make_code_data_descriptor(0x92u, 0x0Au);
-    gdt[gdt_user_data_index] = gdt_make_code_data_descriptor(0xF2u, 0x0Au);
+    gdt[gdt_kernel_data_index] = gdt_make_code_data_descriptor(0x92u, 0x08u);
+    gdt[gdt_user_data_index] = gdt_make_code_data_descriptor(0xF2u, 0x08u);
     gdt[gdt_user_code_index] = gdt_make_code_data_descriptor(0xFAu, 0x0Au);
 
-    tss_base = (uintptr_t)&tss;
+    tss_base = (uintptr_t)&tss[0];
     tss_limit = (uint32_t)(sizeof(tss) - 1u);
     gdt_set_tss_descriptor(tss_base, tss_limit);
 
@@ -122,13 +99,13 @@ void gdt_initialize(void) {
 }
 
 void gdt_set_tss_rsp0(uint64_t rsp0) {
-    tss.rsp0 = rsp0;
+    write_le64(&tss[4], rsp0);
 }
 
 uintptr_t gdt_reserved_begin(void) {
     uintptr_t a = (uintptr_t)&gdt[0];
     uintptr_t b = (uintptr_t)&gdtr[0];
-    uintptr_t c = (uintptr_t)&tss;
+    uintptr_t c = (uintptr_t)&tss[0];
 
     uintptr_t min = a;
 
@@ -146,7 +123,7 @@ uintptr_t gdt_reserved_begin(void) {
 uintptr_t gdt_reserved_end(void) {
     uintptr_t a = (uintptr_t)(&gdt[gdt_entry_count]);
     uintptr_t b = (uintptr_t)(&gdtr[10]);
-    uintptr_t c = (uintptr_t)(&tss + 1);
+    uintptr_t c = (uintptr_t)(&tss[sizeof(tss)]);
 
     uintptr_t max = a;
 

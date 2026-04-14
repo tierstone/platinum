@@ -1,4 +1,5 @@
 #include "kernel/sched.h"
+#include "kernel/paging.h"
 #include "kernel/palloc.h"
 
 #include <stdint.h>
@@ -18,6 +19,8 @@ static task_t task0;
 static task_t task1;
 static task_t *current;
 static int sched_started;
+static int ring3_test_enabled;
+static void (*ring3_test_entry)(void);
 static volatile uint64_t worker_counter;
 
 static uint64_t task_syscall(uint64_t number, uint64_t arg0)
@@ -75,7 +78,7 @@ static void task_worker(void)
     }
 }
 
-static uintptr_t task_build_stack(void (*entry)(void))
+static uintptr_t task_build_kernel_stack(void (*entry)(void))
 {
     uintptr_t page = palloc_alloc();
     uint64_t *sp;
@@ -111,11 +114,50 @@ static uintptr_t task_build_stack(void (*entry)(void))
     return (uintptr_t)sp;
 }
 
-static int task_create(task_t *task, void (*entry)(void))
+static uintptr_t task_build_user_stack(void (*entry)(void))
+{
+    uintptr_t page = palloc_alloc();
+    uint64_t *sp;
+
+    if (page == 0u) {
+        return 0u;
+    }
+
+    paging_mark_user_accessible((uintptr_t)(void *)entry);
+    paging_mark_user_accessible(page);
+
+    sp = (uint64_t *)(page + 4096u);
+
+    *--sp = 0x001Bull;
+    *--sp = (uint64_t)(page + 4096u);
+    *--sp = 0x0000000000000202ull;
+    *--sp = 0x0023ull;
+    *--sp = (uint64_t)(uintptr_t)entry;
+
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+
+    return (uintptr_t)sp;
+}
+
+static int task_create_kernel(task_t *task, void (*entry)(void))
 {
     uintptr_t rsp;
 
-    rsp = task_build_stack(entry);
+    rsp = task_build_kernel_stack(entry);
     if (rsp == 0u) {
         task->rsp = 0u;
         task->state = TASK_UNUSED;
@@ -125,6 +167,28 @@ static int task_create(task_t *task, void (*entry)(void))
     task->rsp = rsp;
     task->state = TASK_RUNNABLE;
     return 1;
+}
+
+static int task_create_user(task_t *task, void (*entry)(void))
+{
+    uintptr_t rsp;
+
+    rsp = task_build_user_stack(entry);
+    if (rsp == 0u) {
+        task->rsp = 0u;
+        task->state = TASK_UNUSED;
+        return 0;
+    }
+
+    task->rsp = rsp;
+    task->state = TASK_RUNNABLE;
+    return 1;
+}
+
+void sched_enable_ring3_test(void (*entry)(void))
+{
+    ring3_test_enabled = 1;
+    ring3_test_entry = entry;
 }
 
 void sched_initialize(void)
@@ -139,13 +203,19 @@ void sched_initialize(void)
     task1.rsp = 0u;
     task1.state = TASK_UNUSED;
 
-    if (!task_create(&task0, task_idle)) {
+    if (!task_create_kernel(&task0, task_idle)) {
         for (;;) {
             __asm__ __volatile__("cli; hlt");
         }
     }
 
-    if (!task_create(&task1, task_worker)) {
+    if (ring3_test_enabled) {
+        if (!task_create_user(&task1, ring3_test_entry)) {
+            for (;;) {
+                __asm__ __volatile__("cli; hlt");
+            }
+        }
+    } else if (!task_create_kernel(&task1, task_worker)) {
         for (;;) {
             __asm__ __volatile__("cli; hlt");
         }
@@ -156,7 +226,7 @@ uintptr_t sched_tick(uintptr_t current_rsp)
 {
     if (!sched_started) {
         sched_started = 1;
-        current = &task0;
+        current = ring3_test_enabled ? &task1 : &task0;
         current->state = TASK_RUNNING;
         return current->rsp;
     }

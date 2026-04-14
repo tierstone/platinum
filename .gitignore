@@ -15,7 +15,13 @@ OVMF_*.fd
 *.qcow2
 *.qcow
 *.raw
+*.log
+*.tmp
+*.out
+*.dump
+dump.txt
 .vscode/
+.codex
 .idea/
 *.swp
 *.swo
@@ -29,3 +35,5 @@ cscope.*
 *.gcno
 *.d
 *.su
+__pycache__/
+*.py[cod]

@@ -8,6 +8,7 @@
 
 static const uint64_t paging_present = 0x001ull;
 static const uint64_t paging_writable = 0x002ull;
+static const uint64_t paging_user = 0x004ull;
 static const uint64_t paging_flags_table = 0x003ull;
 static const uint64_t paging_flags_page = 0x003ull;
 static const uint64_t paging_page_size = 4096ull;
@@ -89,6 +90,49 @@ static int map_page_4k(uintptr_t virtual_address, uintptr_t physical_address) {
     return 1;
 }
 
+static int mark_page_user(uintptr_t virtual_address) {
+    size_t pml4_index;
+    size_t pdpt_index;
+    size_t pd_index;
+    size_t pt_index;
+    uint64_t *pdpt;
+    uint64_t *pd;
+    uint64_t *pt;
+
+    pml4_index = (size_t)((virtual_address >> 39) & 0x1FFu);
+    pdpt_index = (size_t)((virtual_address >> 30) & 0x1FFu);
+    pd_index = (size_t)((virtual_address >> 21) & 0x1FFu);
+    pt_index = (size_t)((virtual_address >> 12) & 0x1FFu);
+
+    if ((paging_pml4[pml4_index] & paging_present) == 0u) {
+        return 0;
+    }
+
+    paging_pml4[pml4_index] |= paging_user;
+    pdpt = entry_table(paging_pml4[pml4_index]);
+
+    if ((pdpt[pdpt_index] & paging_present) == 0u) {
+        return 0;
+    }
+
+    pdpt[pdpt_index] |= paging_user;
+    pd = entry_table(pdpt[pdpt_index]);
+
+    if ((pd[pd_index] & paging_present) == 0u) {
+        return 0;
+    }
+
+    pd[pd_index] |= paging_user;
+    pt = entry_table(pd[pd_index]);
+
+    if ((pt[pt_index] & paging_present) == 0u) {
+        return 0;
+    }
+
+    pt[pt_index] |= paging_user;
+    return 1;
+}
+
 static uintptr_t highest_physical_end(void) {
     uintptr_t highest = 0u;
     size_t index;
@@ -143,6 +187,16 @@ void paging_initialize(void) {
         }
 
         address += (uintptr_t)paging_page_size;
+    }
+
+    arch_load_cr3((uint64_t)(uintptr_t)paging_pml4);
+}
+
+void paging_mark_user_accessible(uintptr_t address) {
+    address &= ~((uintptr_t)paging_page_size - 1u);
+
+    if (!mark_page_user(address)) {
+        arch_halt_forever();
     }
 
     arch_load_cr3((uint64_t)(uintptr_t)paging_pml4);

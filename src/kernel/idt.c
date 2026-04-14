@@ -67,6 +67,8 @@ void idt_initialize(void) {
     }
 
     idt_set_gate(6u, arch_isr_invalid_opcode);
+    idt_set_gate(13u, arch_isr_general_protection);
+    idt_set_gate(14u, arch_isr_page_fault);
 
     write_le16(&idtr[0], (uint16_t)(sizeof(idt) - 1u));
     write_le64(&idtr[2], (uint64_t)(uintptr_t)&idt[0]);

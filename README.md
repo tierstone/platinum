@@ -47,7 +47,7 @@ python3 boot.py
 
 Focus: reach stable usermode execution.
 
-Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`) work under QEMU.
+Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`) work under QEMU. An optional disabled-by-default scheduled ring3 proof task can enter usermode, survive timer preemption, make repeated syscalls, and exit cleanly through a test syscall.
 
 * [x] UEFI entry — x86_64 COFF entry point (`boot.S`)
 * [x] Early serial output — UART `0x3F8` (`serial.c`)
@@ -63,8 +63,12 @@ Current status: timer-driven preemptive kernel threads and basic `int 0x80` sysc
 * [x] Minimal preemptive scheduler
 * [x] Kernel thread context switching
 * [x] Syscall entry via `int 0x80`
+* [x] First scheduled ring3 proof task
+* [x] Ring3 syscall return + clean test exit
 * [ ] ELF loader (static binaries)
 * [ ] Run first usermode program
+
+Ring3 proof note: enabling the current proof path promotes only the selected proof pages inside the identity map to user-accessible before entering ring 3. The user task is scheduler-owned and timer-preempted, but the paging model is still a temporary proof step, not memory isolation.
 
 ### Phase 2: Core Kernel
 

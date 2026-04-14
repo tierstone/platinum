@@ -34,7 +34,7 @@ struct syscall_frame {
 };
 
 static volatile uint64_t kernel_ticks;
-
+static const int ring3_test_enabled = 0;
 static size_t string_length(const char *text) {
     size_t length = 0u;
 
@@ -104,6 +104,14 @@ void kernel_trap(uint32_t vector) {
     write_text("\r\n");
 }
 
+void kernel_trap_error(uint32_t vector, uint64_t error_code) {
+    write_text("trap ");
+    write_decimal_u32(vector);
+    write_text(" ec ");
+    write_decimal_u64(error_code);
+    write_text("\r\n");
+}
+
 uintptr_t kernel_timer_tick(uintptr_t current_rsp) {
     ++kernel_ticks;
 
@@ -135,6 +143,11 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
     if (frame->rax == 2u) {
 	frame->rax = kernel_ticks;
 	return current_rsp;
+    }
+
+    if (frame->rax == 3u) {
+        write_line("ring3 exit");
+        arch_halt_forever();
     }
 
     frame->rax = (uint64_t)-1;
@@ -169,6 +182,18 @@ void kernel_main(void *image_handle, void *system_table) {
     palloc_initialize();
     palloc_self_test();
 
+    {
+        uintptr_t kernel_rsp0 = palloc_alloc();
+
+        if (kernel_rsp0 == 0u) {
+            write_line("tss stack fail");
+            arch_halt_forever();
+        }
+
+        gdt_set_tss_rsp0((uint64_t)(kernel_rsp0 + 4096u));
+        write_line("tss rsp0 ok");
+    }
+
     paging_initialize();
     write_line("paging 4k ok");
 
@@ -178,8 +203,16 @@ void kernel_main(void *image_handle, void *system_table) {
     pit_initialize(100u);
     write_line("pit ok");
 
+    if (ring3_test_enabled) {
+        sched_enable_ring3_test(arch_user_test_entry);
+    }
+
     sched_initialize();
     write_line("sched ok");
+
+    if (ring3_test_enabled) {
+        write_line("ring3 test");
+    }
 
     arch_enable_interrupts();
     write_line("irq on");

@@ -4,11 +4,15 @@
 .global arch_load_cr3
 .global arch_enable_interrupts
 .global arch_task_enter
+.global arch_enter_user
 .global arch_halt_forever
 .global arch_isr_invalid_opcode
+.global arch_isr_general_protection
+.global arch_isr_page_fault
 .global arch_irq0_entry
 .global arch_syscall_entry
 .global arch_load_tr
+.global arch_user_test_entry
 
 efi_main:
     subq $40, %rsp
@@ -64,6 +68,14 @@ arch_task_enter:
     popq %rax
     iretq
 
+arch_enter_user:
+    pushq $0x1b
+    pushq %rdx
+    pushfq
+    pushq $0x23
+    pushq %rcx
+    iretq
+
 arch_halt_forever:
     cli
 1:
@@ -74,6 +86,22 @@ arch_isr_invalid_opcode:
     movl $6, %ecx
     subq $40, %rsp
     call kernel_trap
+    addq $40, %rsp
+    jmp arch_halt_forever
+
+arch_isr_general_protection:
+    popq %rdx
+    movl $13, %ecx
+    subq $40, %rsp
+    call kernel_trap_error
+    addq $40, %rsp
+    jmp arch_halt_forever
+
+arch_isr_page_fault:
+    popq %rdx
+    movl $14, %ecx
+    subq $40, %rsp
+    call kernel_trap_error
     addq $40, %rsp
     jmp arch_halt_forever
 
@@ -152,3 +180,27 @@ arch_syscall_entry:
     popq %rbx
     popq %rax
     iretq
+
+arch_user_test_entry:
+    movl $'U', %edi
+    movl $0, %eax
+    int $0x80
+    movl $2, %eax
+    int $0x80
+    movq %rax, %rbx
+    movl $4, %ecx
+1:
+    movl $2, %eax
+    int $0x80
+    cmpq %rbx, %rax
+    je 1b
+    movq %rax, %rbx
+    movl $'u', %edi
+    movl $0, %eax
+    int $0x80
+    subq $1, %rcx
+    jne 1b
+    movl $3, %eax
+    int $0x80
+2:
+    jmp 2b
