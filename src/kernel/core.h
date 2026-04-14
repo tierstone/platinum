@@ -23,6 +23,6 @@ void arch_isr_general_protection(void);
 void arch_isr_page_fault(void);
 void arch_irq0_entry(void);
 void arch_syscall_entry(void);
-void arch_user_test_entry(void);
+void arch_user_init_entry(void);
 
 #endif

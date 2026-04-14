@@ -7,21 +7,55 @@
 typedef enum task_state {
     TASK_UNUSED = 0,
     TASK_RUNNABLE = 1,
-    TASK_RUNNING = 2
+    TASK_RUNNING = 2,
+    TASK_DONE = 3
 } task_state_t;
 
 typedef struct task {
     uintptr_t rsp;
     task_state_t state;
+    task_kind_t kind;
+    uint32_t id;
 } task_t;
 
 static task_t task0;
 static task_t task1;
 static task_t *current;
 static int sched_started;
-static int ring3_test_enabled;
-static void (*ring3_test_entry)(void);
+static int user_task_enabled;
+static void (*user_task_entry)(void);
 static volatile uint64_t worker_counter;
+
+static task_t *sched_select_next(task_t *previous)
+{
+    task_t *other;
+
+    if (previous == &task0) {
+        other = &task1;
+    } else {
+        other = &task0;
+    }
+
+    if (other->state == TASK_RUNNABLE) {
+        return other;
+    }
+
+    if (previous->state == TASK_RUNNABLE) {
+        return previous;
+    }
+
+    if (task0.state == TASK_RUNNABLE) {
+        return &task0;
+    }
+
+    if (task1.state == TASK_RUNNABLE) {
+        return &task1;
+    }
+
+    for (;;) {
+        __asm__ __volatile__("cli; hlt");
+    }
+}
 
 static uint64_t task_syscall(uint64_t number, uint64_t arg0)
 {
@@ -153,7 +187,7 @@ static uintptr_t task_build_user_stack(void (*entry)(void))
     return (uintptr_t)sp;
 }
 
-static int task_create_kernel(task_t *task, void (*entry)(void))
+static int task_create_kernel(task_t *task, uint32_t id, void (*entry)(void))
 {
     uintptr_t rsp;
 
@@ -166,10 +200,12 @@ static int task_create_kernel(task_t *task, void (*entry)(void))
 
     task->rsp = rsp;
     task->state = TASK_RUNNABLE;
+    task->kind = TASK_KERNEL;
+    task->id = id;
     return 1;
 }
 
-static int task_create_user(task_t *task, void (*entry)(void))
+static int task_create_user(task_t *task, uint32_t id, void (*entry)(void))
 {
     uintptr_t rsp;
 
@@ -182,13 +218,15 @@ static int task_create_user(task_t *task, void (*entry)(void))
 
     task->rsp = rsp;
     task->state = TASK_RUNNABLE;
+    task->kind = TASK_USER;
+    task->id = id;
     return 1;
 }
 
-void sched_enable_ring3_test(void (*entry)(void))
+void sched_enable_user_task(void (*entry)(void))
 {
-    ring3_test_enabled = 1;
-    ring3_test_entry = entry;
+    user_task_enabled = 1;
+    user_task_entry = entry;
 }
 
 void sched_initialize(void)
@@ -199,23 +237,27 @@ void sched_initialize(void)
 
     task0.rsp = 0u;
     task0.state = TASK_UNUSED;
+    task0.kind = TASK_KERNEL;
+    task0.id = 0u;
 
     task1.rsp = 0u;
     task1.state = TASK_UNUSED;
+    task1.kind = TASK_KERNEL;
+    task1.id = 1u;
 
-    if (!task_create_kernel(&task0, task_idle)) {
+    if (!task_create_kernel(&task0, 0u, task_idle)) {
         for (;;) {
             __asm__ __volatile__("cli; hlt");
         }
     }
 
-    if (ring3_test_enabled) {
-        if (!task_create_user(&task1, ring3_test_entry)) {
+    if (user_task_enabled) {
+        if (!task_create_user(&task1, 1u, user_task_entry)) {
             for (;;) {
                 __asm__ __volatile__("cli; hlt");
             }
         }
-    } else if (!task_create_kernel(&task1, task_worker)) {
+    } else if (!task_create_kernel(&task1, 1u, task_worker)) {
         for (;;) {
             __asm__ __volatile__("cli; hlt");
         }
@@ -226,20 +268,35 @@ uintptr_t sched_tick(uintptr_t current_rsp)
 {
     if (!sched_started) {
         sched_started = 1;
-        current = ring3_test_enabled ? &task1 : &task0;
+        current = user_task_enabled ? &task1 : &task0;
         current->state = TASK_RUNNING;
         return current->rsp;
     }
 
-    current->rsp = current_rsp;
-    current->state = TASK_RUNNABLE;
-
-    if (current == &task0) {
-        current = &task1;
-    } else {
-        current = &task0;
+    if (current->state == TASK_RUNNING) {
+        current->rsp = current_rsp;
+        current->state = TASK_RUNNABLE;
     }
 
+    current = sched_select_next(current);
+
+    current->state = TASK_RUNNING;
+    return current->rsp;
+}
+
+uintptr_t sched_exit_current(uintptr_t current_rsp)
+{
+    (void)current_rsp;
+
+    if (!sched_started || current == 0) {
+        for (;;) {
+            __asm__ __volatile__("cli; hlt");
+        }
+    }
+
+    current->rsp = 0u;
+    current->state = TASK_DONE;
+    current = sched_select_next(current);
     current->state = TASK_RUNNING;
     return current->rsp;
 }
@@ -247,4 +304,22 @@ uintptr_t sched_tick(uintptr_t current_rsp)
 uint64_t sched_debug_worker_counter(void)
 {
     return worker_counter;
+}
+
+uint32_t sched_current_task_id(void)
+{
+    if (current == 0) {
+        return 0u;
+    }
+
+    return current->id;
+}
+
+task_kind_t sched_current_task_kind(void)
+{
+    if (current == 0) {
+        return TASK_KERNEL;
+    }
+
+    return current->kind;
 }

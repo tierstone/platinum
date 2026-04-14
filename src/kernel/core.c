@@ -34,7 +34,7 @@ struct syscall_frame {
 };
 
 static volatile uint64_t kernel_ticks;
-static const int ring3_test_enabled = 0;
+static const int user_init_enabled = 0;
 static size_t string_length(const char *text) {
     size_t length = 0u;
 
@@ -115,7 +115,9 @@ void kernel_trap_error(uint32_t vector, uint64_t error_code) {
 uintptr_t kernel_timer_tick(uintptr_t current_rsp) {
     ++kernel_ticks;
 
-    if ((kernel_ticks % 100u) == 0u) {
+    if ((kernel_ticks % 100u) == 0u &&
+        sched_current_task_kind() == TASK_KERNEL &&
+        sched_current_task_id() == 1u) {
         write_text("worker ");
         write_decimal_u64(sched_debug_worker_counter());
         write_text("\r\n");
@@ -147,7 +149,8 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
 
     if (frame->rax == 3u) {
         write_line("ring3 exit");
-        arch_halt_forever();
+        frame->rax = 0u;
+        return sched_exit_current(current_rsp);
     }
 
     frame->rax = (uint64_t)-1;
@@ -203,15 +206,15 @@ void kernel_main(void *image_handle, void *system_table) {
     pit_initialize(100u);
     write_line("pit ok");
 
-    if (ring3_test_enabled) {
-        sched_enable_ring3_test(arch_user_test_entry);
+    if (user_init_enabled) {
+        sched_enable_user_task(arch_user_init_entry);
     }
 
     sched_initialize();
     write_line("sched ok");
 
-    if (ring3_test_enabled) {
-        write_line("ring3 test");
+    if (user_init_enabled) {
+        write_line("user init");
     }
 
     arch_enable_interrupts();

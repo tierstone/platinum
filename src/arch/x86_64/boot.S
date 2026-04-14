@@ -12,7 +12,7 @@
 .global arch_irq0_entry
 .global arch_syscall_entry
 .global arch_load_tr
-.global arch_user_test_entry
+.global arch_user_init_entry
 
 efi_main:
     subq $40, %rsp
@@ -181,26 +181,28 @@ arch_syscall_entry:
     popq %rax
     iretq
 
-arch_user_test_entry:
+arch_user_init_entry:
     movl $'U', %edi
     movl $0, %eax
     int $0x80
     movl $2, %eax
     int $0x80
     movq %rax, %rbx
-    movl $4, %ecx
+    movl $16, %ecx
 1:
     movl $2, %eax
     int $0x80
     cmpq %rbx, %rax
     je 1b
     movq %rax, %rbx
+    subq $1, %rcx
+    jne 1b
+    movl $16, %ecx
     movl $'u', %edi
     movl $0, %eax
     int $0x80
-    subq $1, %rcx
-    jne 1b
-    movl $3, %eax
+    movl $1, %eax
     int $0x80
+    jmp 1b
 2:
     jmp 2b
