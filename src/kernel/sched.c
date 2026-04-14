@@ -1,5 +1,6 @@
 #include "kernel/sched.h"
 #include "drivers/serial.h"
+#include "kernel/palloc.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -9,69 +10,95 @@ typedef struct task {
 } task_t;
 
 static uint64_t sched_ticks;
-
 static task_t task0;
 static task_t task1;
-
 static task_t *current;
+static int sched_started;
 
-static size_t string_length(const char *text) {
-    size_t length = 0u;
+static void task_delay(void)
+{
+    volatile uint64_t i;
 
-    while (text[length] != '\0') {
-        ++length;
-    }
-
-    return length;
-}
-
-static void write_text(const char *text) {
-    serial_write(text, string_length(text));
-}
-
-static void write_decimal_u64(uint64_t value) {
-    char digits[32];
-    size_t count = 0u;
-    uint64_t current = value;
-
-    if (current == 0u) {
-        serial_write("0", 1u);
-        return;
-    }
-
-    while (current != 0u) {
-        digits[count] = (char)('0' + (current % 10u));
-        current /= 10u;
-        ++count;
-    }
-
-    while (count != 0u) {
-        --count;
-        serial_write(&digits[count], 1u);
+    for (i = 0u; i < 1000000ull; ++i) {
     }
 }
 
-static uintptr_t current_task_rsp;
+static void task_idle(void)
+{
+    for (;;) {
+        serial_write("I", 1u);
+        task_delay();
+    }
+}
+
+static void task_test(void)
+{
+    for (;;) {
+        serial_write("T", 1u);
+        task_delay();
+    }
+}
+
+static uintptr_t task_build_stack(void (*entry)(void))
+{
+    uintptr_t page = palloc_alloc();
+    uint64_t *sp;
+
+    if (page == 0u) {
+        return 0u;
+    }
+
+    sp = (uint64_t *)(page + 4096u);
+
+    *--sp = 0x0010ull;
+    *--sp = (uint64_t)(uintptr_t)(page + 4096u - 8u);
+    *--sp = 0x0000000000000202ull;
+    *--sp = 0x0008ull;
+    *--sp = (uint64_t)(uintptr_t)entry;
+
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+
+    return (uintptr_t)sp;
+}
 
 void sched_initialize(void) {
     sched_ticks = 0u;
-
-    task0.rsp = 0u;
-    task1.rsp = 0u;
-
-    current = &task0;
+    task0.rsp = task_build_stack(task_idle);
+    task1.rsp = task_build_stack(task_test);
+    current = NULL;
+    sched_started = 0;
 }
 
 uintptr_t sched_tick(uintptr_t current_rsp)
 {
     ++sched_ticks;
 
+    if (!sched_started) {
+        sched_started = 1;
+        current = &task0;
+        return current->rsp;
+    }
+
     current->rsp = current_rsp;
 
-    if ((sched_ticks % 100u) == 0u) {
-        write_text("sched ");
-        write_decimal_u64(sched_ticks);
-        write_text("\r\n");
+    if (current == &task0) {
+        current = &task1;
+    } else {
+        current = &task0;
     }
 
     return current->rsp;

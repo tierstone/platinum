@@ -87,11 +87,14 @@ arch_irq0_entry:
     pushq %r13
     pushq %r14
     pushq %r15
+
     movq %rsp, %rcx
     subq $40, %rsp
     call kernel_timer_tick
     addq $40, %rsp
+
     movq %rax, %rsp
+
     popq %r15
     popq %r14
     popq %r13
@@ -107,4 +110,5 @@ arch_irq0_entry:
     popq %rcx
     popq %rbx
     popq %rax
+
     iretq
