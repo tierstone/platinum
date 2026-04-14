@@ -47,7 +47,7 @@ python3 boot.py
 
 Focus: reach stable usermode execution.
 
-Current status: timer-driven kernel thread scheduling and basic syscall dispatch work under QEMU.
+Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`) work under QEMU.
 
 * [x] UEFI entry — x86_64 COFF entry point (`boot.S`)
 * [x] Early serial output — UART `0x3F8` (`serial.c`)
