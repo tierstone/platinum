@@ -132,6 +132,11 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
         return sched_tick(current_rsp);
     }
 
+    if (frame->rax == 2u) {
+	frame->rax = kernel_ticks;
+	return current_rsp;
+    }
+
     frame->rax = (uint64_t)-1;
     return current_rsp;
 }

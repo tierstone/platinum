@@ -46,6 +46,7 @@ python3 boot.py
 ### Phase 1: Kernel Bring-up
 
 Focus: reach stable usermode execution.
+
 Current status: timer-driven kernel thread scheduling and basic syscall dispatch work under QEMU.
 
 * [x] UEFI entry — x86_64 COFF entry point (`boot.S`)

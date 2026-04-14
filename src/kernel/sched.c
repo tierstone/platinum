@@ -51,6 +51,8 @@ static void task_idle(void)
 
 static void task_worker(void)
 {
+    uint64_t ticks;
+
     for (;;) {
         ++worker_counter;
 
@@ -60,6 +62,13 @@ static void task_worker(void)
 
         if ((worker_counter % 64u) == 0u) {
             task_syscall(1u, 0u);
+        }
+
+        if ((worker_counter % 512u) == 0u) {
+            ticks = task_syscall(2u, 0u);
+            if (ticks != 0u) {
+                task_syscall(0u, (uint64_t)'K');
+            }
         }
 
         task_delay();
