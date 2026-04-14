@@ -58,7 +58,8 @@ Focus: reach stable usermode execution.
 * [x] Paging — 4KB pages, initial identity map
 * [x] Physical page allocator — reusable free-list
 * [x] Timer interrupt (PIT via QEMU)
-* [ ] Minimal preemptive scheduler
+* [x] Minimal preemptive scheduler
+* [x] Kernel thread context switching
 * [ ] Syscall entry (syscall/sysret or int)
 * [ ] ELF loader (static binaries)
 * [ ] Run first usermode program
