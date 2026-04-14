@@ -46,6 +46,7 @@ python3 boot.py
 ### Phase 1: Kernel Bring-up
 
 Focus: reach stable usermode execution.
+Current status: timer-driven kernel thread scheduling and basic syscall dispatch work under QEMU.
 
 * [x] UEFI entry — x86_64 COFF entry point (`boot.S`)
 * [x] Early serial output — UART `0x3F8` (`serial.c`)
@@ -60,7 +61,7 @@ Focus: reach stable usermode execution.
 * [x] Timer interrupt (PIT via QEMU)
 * [x] Minimal preemptive scheduler
 * [x] Kernel thread context switching
-* [ ] Syscall entry (syscall/sysret or int)
+* [x] Syscall entry via `int 0x80`
 * [ ] ELF loader (static binaries)
 * [ ] Run first usermode program
 
