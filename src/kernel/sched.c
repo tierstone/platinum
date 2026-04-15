@@ -1,5 +1,4 @@
 #include "kernel/sched.h"
-#include "kernel/paging.h"
 #include "kernel/palloc.h"
 
 #include <stdint.h>
@@ -151,19 +150,12 @@ static uintptr_t task_build_kernel_stack(void (*entry)(void))
 static uintptr_t task_build_user_stack(const struct user_task_bootstrap *bootstrap)
 {
     uintptr_t stack_top;
-    uintptr_t stack_page;
     uint64_t *sp;
 
     stack_top = bootstrap->user_stack_top;
     if (stack_top == 0u) {
         return 0u;
     }
-
-    stack_page = stack_top - 1u;
-
-    paging_mark_user_accessible((uintptr_t)(void *)bootstrap->trampoline_entry);
-    paging_mark_user_accessible((uintptr_t)(void *)bootstrap->user_entry);
-    paging_mark_user_accessible(stack_page);
 
     sp = (uint64_t *)stack_top;
 

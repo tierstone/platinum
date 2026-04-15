@@ -11,6 +11,18 @@ enum {
     elf_user_load_size = 0x00100000u
 };
 
-int elf_load_user_image(const uint8_t *image, size_t image_size, struct user_task_bootstrap *bootstrap);
+struct loaded_user_image {
+    uintptr_t load_begin;
+    uintptr_t load_end;
+    void (*entry)(void);
+    uintptr_t stack_top;
+};
+
+int elf_load_user_image(
+    const uint8_t *image,
+    size_t image_size,
+    const struct user_virtual_layout *layout,
+    struct loaded_user_image *loaded_image
+);
 
 #endif

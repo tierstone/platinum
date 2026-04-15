@@ -8,7 +8,14 @@ typedef enum task_kind {
     TASK_USER = 1
 } task_kind_t;
 
+struct user_virtual_layout {
+    uintptr_t trampoline_base;
+    uintptr_t image_base;
+    uintptr_t stack_top;
+};
+
 struct user_task_bootstrap {
+    struct user_virtual_layout layout;
     void (*trampoline_entry)(void);
     void (*user_entry)(void);
     uintptr_t user_stack_top;

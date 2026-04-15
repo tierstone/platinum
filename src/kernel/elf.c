@@ -6,8 +6,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-extern void serial_write(const char *data, size_t length);
-
 enum {
     elf_magic0 = 0x7Fu,
     elf_magic1 = 'E',
@@ -65,50 +63,6 @@ static void memory_zero(uint8_t *dst, size_t count)
     for (index = 0u; index < count; ++index) {
         dst[index] = 0u;
     }
-}
-
-static size_t string_length(const char *text)
-{
-    size_t length;
-
-    length = 0u;
-    while (text[length] != '\0') {
-        ++length;
-    }
-
-    return length;
-}
-
-static void write_text(const char *text)
-{
-    serial_write(text, string_length(text));
-}
-
-static void write_line(const char *text)
-{
-    write_text(text);
-    serial_write("\r\n", 2u);
-}
-
-static void write_hex_u64(uint64_t value)
-{
-    static const char digits[] = "0123456789abcdef";
-    char output[18];
-    size_t index;
-
-    output[0] = '0';
-    output[1] = 'x';
-
-    for (index = 0u; index < 16u; ++index) {
-        unsigned int shift;
-        uint64_t nibble;
-
-        shift = (unsigned int)((15u - index) * 4u);
-        nibble = (value >> shift) & 0xFu;
-        output[2u + index] = digits[(unsigned int)nibble];
-    }
-
-    serial_write(output, sizeof(output));
 }
 
 static uintptr_t align_down(uintptr_t value)
@@ -279,7 +233,12 @@ static int load_segment(const uint8_t *image, size_t image_size, const struct el
     return 1;
 }
 
-int elf_load_user_image(const uint8_t *image, size_t image_size, struct user_task_bootstrap *bootstrap)
+int elf_load_user_image(
+    const uint8_t *image,
+    size_t image_size,
+    const struct user_virtual_layout *layout,
+    struct loaded_user_image *loaded_image
+)
 {
     const struct elf64_header *header;
     const struct elf64_program_header *phdrs;
@@ -312,20 +271,12 @@ int elf_load_user_image(const uint8_t *image, size_t image_size, struct user_tas
         return 0;
     }
 
+    if (layout->image_base == 0u || layout->stack_top == 0u) {
+        return 0;
+    }
+
     load_begin = (uintptr_t)elf_user_load_base;
     load_end = load_begin + (source_end - source_begin);
-
-    write_text("elf src ");
-    write_hex_u64((uint64_t)source_begin);
-    write_text(" ");
-    write_hex_u64((uint64_t)source_end);
-    write_text("\r\n");
-
-    write_text("elf load ");
-    write_hex_u64((uint64_t)load_begin);
-    write_text(" ");
-    write_hex_u64((uint64_t)load_end);
-    write_text("\r\n");
 
     if (!claim_window_pages(load_begin, load_end)) {
         return 0;
@@ -340,7 +291,10 @@ int elf_load_user_image(const uint8_t *image, size_t image_size, struct user_tas
     }
 
     for (index = 0u; index < (uint16_t)((load_end - load_begin) / 4096u); ++index) {
-        paging_mark_user_accessible(load_begin + (uintptr_t)index * 4096u);
+        paging_map_user_page(
+            layout->image_base + (uintptr_t)index * 4096u,
+            load_begin + (uintptr_t)index * 4096u
+        );
     }
 
     user_stack_page = palloc_alloc();
@@ -348,21 +302,11 @@ int elf_load_user_image(const uint8_t *image, size_t image_size, struct user_tas
         return 0;
     }
 
-    paging_mark_user_accessible(user_stack_page);
+    paging_map_user_page(layout->stack_top - 4096u, user_stack_page);
 
-    bootstrap->trampoline_entry = arch_user_program_entry;
-    bootstrap->user_entry = (void (*)(void))(load_begin + (uintptr_t)(header->entry - source_begin));
-    bootstrap->user_stack_top = user_stack_page + 4096u;
-
-    write_text("elf entry ");
-    write_hex_u64((uint64_t)(uintptr_t)bootstrap->user_entry);
-    write_text("\r\n");
-
-    write_text("elf boot ");
-    write_hex_u64((uint64_t)(uintptr_t)bootstrap->trampoline_entry);
-    write_text(" ");
-    write_hex_u64((uint64_t)bootstrap->user_stack_top);
-    write_text("\r\n");
-
+    loaded_image->load_begin = layout->image_base;
+    loaded_image->load_end = layout->image_base + (load_end - load_begin);
+    loaded_image->entry = (void (*)(void))(layout->image_base + (uintptr_t)(header->entry - source_begin));
+    loaded_image->stack_top = layout->stack_top;
     return 1;
 }

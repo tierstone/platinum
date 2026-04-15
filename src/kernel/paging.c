@@ -41,10 +41,13 @@ static uint64_t *entry_table(uint64_t entry) {
     return (uint64_t *)(void *)(uintptr_t)(entry & 0x000FFFFFFFFFF000ull);
 }
 
-static uint64_t *get_or_create_next(uint64_t *table, size_t index) {
+static uint64_t *get_or_create_next(uint64_t *table, size_t index, uint64_t flags) {
     uint64_t *next;
 
     if ((table[index] & paging_present) != 0u) {
+        if ((flags & paging_user) != 0u) {
+            table[index] |= paging_user;
+        }
         return entry_table(table[index]);
     }
 
@@ -53,11 +56,11 @@ static uint64_t *get_or_create_next(uint64_t *table, size_t index) {
         return NULL;
     }
 
-    table[index] = ((uint64_t)(uintptr_t)next) | paging_flags_table;
+    table[index] = ((uint64_t)(uintptr_t)next) | paging_flags_table | (flags & paging_user);
     return next;
 }
 
-static int map_page_4k(uintptr_t virtual_address, uintptr_t physical_address) {
+static int map_page_4k(uintptr_t virtual_address, uintptr_t physical_address, uint64_t flags) {
     size_t pml4_index;
     size_t pdpt_index;
     size_t pd_index;
@@ -71,65 +74,22 @@ static int map_page_4k(uintptr_t virtual_address, uintptr_t physical_address) {
     pd_index = (size_t)((virtual_address >> 21) & 0x1FFu);
     pt_index = (size_t)((virtual_address >> 12) & 0x1FFu);
 
-    pdpt = get_or_create_next(paging_pml4, pml4_index);
+    pdpt = get_or_create_next(paging_pml4, pml4_index, flags);
     if (pdpt == NULL) {
         return 0;
     }
 
-    pd = get_or_create_next(pdpt, pdpt_index);
+    pd = get_or_create_next(pdpt, pdpt_index, flags);
     if (pd == NULL) {
         return 0;
     }
 
-    pt = get_or_create_next(pd, pd_index);
+    pt = get_or_create_next(pd, pd_index, flags);
     if (pt == NULL) {
         return 0;
     }
 
-    pt[pt_index] = ((uint64_t)physical_address) | paging_flags_page;
-    return 1;
-}
-
-static int mark_page_user(uintptr_t virtual_address) {
-    size_t pml4_index;
-    size_t pdpt_index;
-    size_t pd_index;
-    size_t pt_index;
-    uint64_t *pdpt;
-    uint64_t *pd;
-    uint64_t *pt;
-
-    pml4_index = (size_t)((virtual_address >> 39) & 0x1FFu);
-    pdpt_index = (size_t)((virtual_address >> 30) & 0x1FFu);
-    pd_index = (size_t)((virtual_address >> 21) & 0x1FFu);
-    pt_index = (size_t)((virtual_address >> 12) & 0x1FFu);
-
-    if ((paging_pml4[pml4_index] & paging_present) == 0u) {
-        return 0;
-    }
-
-    paging_pml4[pml4_index] |= paging_user;
-    pdpt = entry_table(paging_pml4[pml4_index]);
-
-    if ((pdpt[pdpt_index] & paging_present) == 0u) {
-        return 0;
-    }
-
-    pdpt[pdpt_index] |= paging_user;
-    pd = entry_table(pdpt[pdpt_index]);
-
-    if ((pd[pd_index] & paging_present) == 0u) {
-        return 0;
-    }
-
-    pd[pd_index] |= paging_user;
-    pt = entry_table(pd[pd_index]);
-
-    if ((pt[pt_index] & paging_present) == 0u) {
-        return 0;
-    }
-
-    pt[pt_index] |= paging_user;
+    pt[pt_index] = ((uint64_t)physical_address) | flags;
     return 1;
 }
 
@@ -182,7 +142,7 @@ void paging_initialize(void) {
 
     address = 0u;
     while (address < limit) {
-        if (!map_page_4k(address, address)) {
+        if (!map_page_4k(address, address, paging_flags_page)) {
             arch_halt_forever();
         }
 
@@ -192,10 +152,11 @@ void paging_initialize(void) {
     arch_load_cr3((uint64_t)(uintptr_t)paging_pml4);
 }
 
-void paging_mark_user_accessible(uintptr_t address) {
-    address &= ~((uintptr_t)paging_page_size - 1u);
+void paging_map_user_page(uintptr_t virtual_address, uintptr_t physical_address) {
+    virtual_address &= ~((uintptr_t)paging_page_size - 1u);
+    physical_address &= ~((uintptr_t)paging_page_size - 1u);
 
-    if (!mark_page_user(address)) {
+    if (!map_page_4k(virtual_address, physical_address, paging_present | paging_writable | paging_user)) {
         arch_halt_forever();
     }
 
