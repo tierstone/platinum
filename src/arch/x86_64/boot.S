@@ -2,6 +2,7 @@
 .global arch_load_gdt
 .global arch_load_idt
 .global arch_load_cr3
+.global arch_read_cr2
 .global arch_enable_interrupts
 .global arch_task_enter
 .global arch_enter_user
@@ -42,6 +43,10 @@ arch_load_idt:
 
 arch_load_cr3:
     movq %rcx, %cr3
+    ret
+
+arch_read_cr2:
+    movq %cr2, %rax
     ret
 
 arch_enable_interrupts:

@@ -15,9 +15,9 @@ USER_BUILD_DIR = BUILD_DIR / "user"
 USER_PROGRAM_ELF = USER_BUILD_DIR / "init.elf"
 USER_BLOB_C = BUILD_DIR / "generated" / "user_program_blob.c"
 
-OVMF_CODE = Path("/usr/share/edk2-ovmf/OVMF_CODE.fd")
-OVMF_VARS_SRC = Path("/usr/share/edk2-ovmf/OVMF_VARS.fd")
-OVMF_VARS_DST = ROOT_DIR / "OVMF_VARS.fd"
+OVMF_CODE = Path("/usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd")
+OVMF_VARS_SRC = Path("/usr/share/edk2-ovmf/x64/OVMF_VARS.4m.fd")
+OVMF_VARS_DST = ROOT_DIR / "OVMF_VARS.4m.fd"
 
 FAT_ROOT = ROOT_DIR / "root"
 EFI_BOOT_DIR = FAT_ROOT / "EFI" / "BOOT"

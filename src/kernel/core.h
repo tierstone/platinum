@@ -12,6 +12,7 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp);
 void arch_load_gdt(const void *descriptor, uint16_t data_selector);
 void arch_load_idt(const void *descriptor);
 void arch_load_cr3(uint64_t value);
+uint64_t arch_read_cr2(void);
 void arch_enable_interrupts(void);
 void arch_load_tr(uint16_t selector);
 void arch_task_enter(uint64_t rsp);

@@ -94,6 +94,26 @@ static void write_line(const char *text) {
     serial_write("\r\n", 2u);
 }
 
+static void write_hex_u64(uint64_t value) {
+    static const char digits[] = "0123456789abcdef";
+    char output[18];
+    size_t index;
+
+    output[0] = '0';
+    output[1] = 'x';
+
+    for (index = 0u; index < 16u; ++index) {
+        unsigned int shift;
+        uint64_t nibble;
+
+        shift = (unsigned int)((15u - index) * 4u);
+        nibble = (value >> shift) & 0xFu;
+        output[2u + index] = digits[(unsigned int)nibble];
+    }
+
+    serial_write(output, sizeof(output));
+}
+
 static void write_decimal_u32(uint32_t value) {
     char digits[10];
     size_t count = 0u;
@@ -149,6 +169,10 @@ void kernel_trap_error(uint32_t vector, uint64_t error_code) {
     write_decimal_u32(vector);
     write_text(" ec ");
     write_decimal_u64(error_code);
+    if (vector == 14u) {
+        write_text(" cr2 ");
+        write_hex_u64(arch_read_cr2());
+    }
     write_text("\r\n");
 }
 
