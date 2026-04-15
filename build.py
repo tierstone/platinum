@@ -38,7 +38,7 @@ def compile_sources(sources: list[Path], flags: list[str], extra_flags: list[str
     return objects
 
 
-def build_user_program() -> Path:
+def build_user_program(extra_flags: list[str]) -> Path:
     user_source = Path("src/user/init.c")
     user_object = USER_BUILD_DIR / "init.o"
     user_linker_script = Path("src/user/link.ld")
@@ -63,6 +63,7 @@ def build_user_program() -> Path:
         "-Wpedantic",
         f"-I{Path('src').resolve()}",
         "-std=c11",
+    ] + extra_flags + [
         "-c",
         str(user_source),
         "-o",
@@ -144,14 +145,42 @@ def user_init_flags(mode: str) -> list[str]:
             "-DUSER_INIT_USE_ELF=1",
         ]
 
+    if mode == "bad-syscall":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_BAD_SYSCALL=1",
+        ]
+
+    if mode == "bad-elf":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=1",
+            "-DUSER_TEST_BAD_ELF=1",
+        ]
+
+    if mode == "yield-stress":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_YIELD_STRESS=1",
+        ]
+
+    if mode == "bad-bootstrap":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_BAD_BOOTSTRAP=1",
+        ]
+
     raise ValueError(f"unknown user init mode: {mode}")
 
 
 def build(user_init_mode: str) -> None:
     c_sources, asm_sources = source_files()
-    user_elf = build_user_program()
-    generated_blob = generate_user_blob_source(user_elf)
     extra_cflags = user_init_flags(user_init_mode)
+    user_elf = build_user_program(extra_cflags)
+    generated_blob = generate_user_blob_source(user_elf)
 
     ensure_dir(BUILD_DIR)
 
@@ -169,7 +198,7 @@ def main() -> None:
     parser.add_argument("target", choices=["all", "efi", "clean"])
     parser.add_argument(
         "--user-init",
-        choices=["off", "c", "elf"],
+        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap"],
         default="off",
         help="select first scheduled user task path for test builds",
     )

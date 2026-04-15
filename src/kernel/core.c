@@ -50,6 +50,10 @@ static const struct user_virtual_layout first_user_layout = {
 #define USER_INIT_USE_ELF 0
 #endif
 
+#ifndef USER_TEST_BAD_ELF
+#define USER_TEST_BAD_ELF 0
+#endif
+
 void user_init_main(void);
 extern const uint8_t embedded_user_program_elf[];
 extern const size_t embedded_user_program_elf_size;
@@ -60,7 +64,11 @@ static void configure_first_user_task(void) {
 
     bootstrap.layout = first_user_layout;
     bootstrap.address_space = paging_create_user_address_space();
-    if (bootstrap.address_space == 0u) {
+    if (bootstrap.address_space == 0u || !paging_address_space_valid(bootstrap.address_space)) {
+        write_line("user as fail");
+        arch_halt_forever();
+    }
+    if (!paging_mapping_is_supervisor_only(bootstrap.address_space, 0u)) {
         write_line("user as fail");
         arch_halt_forever();
     }
@@ -69,10 +77,21 @@ static void configure_first_user_task(void) {
         struct loaded_user_image loaded_image;
         uintptr_t trampoline_page;
         uintptr_t trampoline_entry;
+        const uint8_t *user_image;
+        size_t user_image_size;
+
+        if (USER_TEST_BAD_ELF) {
+            static const uint8_t bad_user_image[] = { 0x00u, 0x45u, 0x4cu, 0x46u };
+            user_image = bad_user_image;
+            user_image_size = sizeof(bad_user_image);
+        } else {
+            user_image = embedded_user_program_elf;
+            user_image_size = embedded_user_program_elf_size;
+        }
 
         if (!elf_load_user_image(
-                embedded_user_program_elf,
-                embedded_user_program_elf_size,
+                user_image,
+                user_image_size,
                 &bootstrap.layout,
                 bootstrap.address_space,
                 &loaded_image)) {
@@ -82,6 +101,14 @@ static void configure_first_user_task(void) {
 
         trampoline_page = (uintptr_t)(void *)arch_user_program_entry & ~(uintptr_t)4095u;
         paging_map_user_page(bootstrap.address_space, bootstrap.layout.trampoline_base, trampoline_page);
+        if (!paging_mapping_matches(bootstrap.address_space, bootstrap.layout.trampoline_base, trampoline_page, 1) ||
+            !paging_mapping_is_supervisor_only(bootstrap.address_space, trampoline_page) ||
+            !paging_mapping_is_supervisor_only(bootstrap.address_space, loaded_image.load_physical_begin) ||
+            !paging_mapping_is_supervisor_only(bootstrap.address_space, loaded_image.load_physical_end - 4096u) ||
+            !paging_mapping_is_supervisor_only(bootstrap.address_space, loaded_image.stack_page)) {
+            write_line("user elf fail");
+            arch_halt_forever();
+        }
         trampoline_entry = bootstrap.layout.trampoline_base +
             ((uintptr_t)(void *)arch_user_program_entry & (uintptr_t)4095u);
 
@@ -108,6 +135,15 @@ static void configure_first_user_task(void) {
         paging_map_user_page(bootstrap.address_space, bootstrap.layout.trampoline_base, trampoline_page);
         paging_map_user_page(bootstrap.address_space, bootstrap.layout.image_base, user_entry_page);
         paging_map_user_page(bootstrap.address_space, bootstrap.layout.stack_top - 4096u, user_stack_page);
+        if (!paging_mapping_matches(bootstrap.address_space, bootstrap.layout.trampoline_base, trampoline_page, 1) ||
+            !paging_mapping_matches(bootstrap.address_space, bootstrap.layout.image_base, user_entry_page, 1) ||
+            !paging_mapping_matches(bootstrap.address_space, bootstrap.layout.stack_top - 4096u, user_stack_page, 1) ||
+            !paging_mapping_is_supervisor_only(bootstrap.address_space, trampoline_page) ||
+            !paging_mapping_is_supervisor_only(bootstrap.address_space, user_entry_page) ||
+            !paging_mapping_is_supervisor_only(bootstrap.address_space, user_stack_page)) {
+            write_line("user map fail");
+            arch_halt_forever();
+        }
 
         trampoline_entry = bootstrap.layout.trampoline_base +
             ((uintptr_t)(void *)arch_user_program_entry & (uintptr_t)4095u);
@@ -119,6 +155,10 @@ static void configure_first_user_task(void) {
         bootstrap.user_stack_page = user_stack_page;
         bootstrap.user_stack_top = bootstrap.layout.stack_top;
     }
+
+#ifdef USER_TEST_BAD_BOOTSTRAP
+    bootstrap.trampoline_entry = 0;
+#endif
 
     sched_enable_user_task(&bootstrap);
 }

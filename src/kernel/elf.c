@@ -275,6 +275,9 @@ int elf_load_user_image(
     if (layout->image_base == 0u || layout->stack_top == 0u) {
         return 0;
     }
+    if (address_space == 0u) {
+        return 0;
+    }
 
     load_begin = (uintptr_t)elf_user_load_base;
     load_end = load_begin + (source_end - source_begin);
@@ -292,11 +295,15 @@ int elf_load_user_image(
     }
 
     for (index = 0u; index < (uint16_t)((load_end - load_begin) / 4096u); ++index) {
-        paging_map_user_page(
-            address_space,
-            layout->image_base + (uintptr_t)index * 4096u,
-            load_begin + (uintptr_t)index * 4096u
-        );
+        uintptr_t virtual_address;
+        uintptr_t physical_address;
+
+        virtual_address = layout->image_base + (uintptr_t)index * 4096u;
+        physical_address = load_begin + (uintptr_t)index * 4096u;
+        paging_map_user_page(address_space, virtual_address, physical_address);
+        if (!paging_mapping_matches(address_space, virtual_address, physical_address, 1)) {
+            return 0;
+        }
     }
 
     user_stack_page = palloc_alloc();
@@ -305,9 +312,14 @@ int elf_load_user_image(
     }
 
     paging_map_user_page(address_space, layout->stack_top - 4096u, user_stack_page);
+    if (!paging_mapping_matches(address_space, layout->stack_top - 4096u, user_stack_page, 1)) {
+        return 0;
+    }
 
     loaded_image->load_begin = layout->image_base;
     loaded_image->load_end = layout->image_base + (load_end - load_begin);
+    loaded_image->load_physical_begin = load_begin;
+    loaded_image->load_physical_end = load_end;
     loaded_image->entry = (void (*)(void))(layout->image_base + (uintptr_t)(header->entry - source_begin));
     loaded_image->stack_page = user_stack_page;
     loaded_image->stack_top = layout->stack_top;

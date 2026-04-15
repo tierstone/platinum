@@ -61,6 +61,28 @@ static void sched_fail(const char *text)
     }
 }
 
+static void sched_validate_task(const task_t *task, task_state_t expected_state, const char *text)
+{
+    if (task == 0) {
+        sched_fail(text);
+    }
+    if (task->state != expected_state) {
+        sched_fail(text);
+    }
+    if (task->rsp == 0u) {
+        sched_fail(text);
+    }
+    if (task->kind == TASK_KERNEL) {
+        if (task->cr3 != paging_kernel_address_space()) {
+            sched_fail("sched kernel cr3");
+        }
+        return;
+    }
+    if (task->cr3 == 0u || task->cr3 == paging_kernel_address_space()) {
+        sched_fail("sched user cr3");
+    }
+}
+
 static task_t *sched_select_next(task_t *previous)
 {
     task_t *other;
@@ -275,6 +297,9 @@ static int task_create_user(task_t *task, uint32_t id, const struct user_task_bo
 void sched_enable_user_task(const struct user_task_bootstrap *bootstrap)
 {
     if (bootstrap->address_space == 0u ||
+        bootstrap->layout.trampoline_base == 0u ||
+        bootstrap->layout.image_base == 0u ||
+        bootstrap->layout.stack_top == 0u ||
         bootstrap->trampoline_entry == 0 ||
         bootstrap->user_entry == 0 ||
         bootstrap->user_stack_page == 0u ||
@@ -328,15 +353,16 @@ uintptr_t sched_tick(uintptr_t current_rsp)
     if (!sched_started) {
         sched_started = 1;
         current = user_task_enabled ? &task1 : &task0;
-        if (current->state != TASK_RUNNABLE) {
-            sched_fail("sched start state");
-        }
+        sched_validate_task(current, TASK_RUNNABLE, "sched start state");
         paging_activate(current->cr3);
         current->state = TASK_RUNNING;
         return current->rsp;
     }
 
     if (current->state == TASK_RUNNING) {
+        if (current->rsp == 0u) {
+            sched_fail("sched current rsp");
+        }
         current->rsp = current_rsp;
         current->state = TASK_RUNNABLE;
     } else {
@@ -345,9 +371,7 @@ uintptr_t sched_tick(uintptr_t current_rsp)
 
     current = sched_select_next(current);
 
-    if (current->state != TASK_RUNNABLE) {
-        sched_fail("sched next state");
-    }
+    sched_validate_task(current, TASK_RUNNABLE, "sched next state");
     paging_activate(current->cr3);
     current->state = TASK_RUNNING;
     return current->rsp;
@@ -364,9 +388,7 @@ uintptr_t sched_exit_current(uintptr_t current_rsp)
     current->rsp = 0u;
     current->state = TASK_DONE;
     current = sched_select_next(current);
-    if (current->state != TASK_RUNNABLE) {
-        sched_fail("sched exit next");
-    }
+    sched_validate_task(current, TASK_RUNNABLE, "sched exit next");
     paging_activate(current->cr3);
     current->state = TASK_RUNNING;
     return current->rsp;

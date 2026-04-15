@@ -14,6 +14,8 @@ enum {
 struct loaded_user_image {
     uintptr_t load_begin;
     uintptr_t load_end;
+    uintptr_t load_physical_begin;
+    uintptr_t load_physical_end;
     void (*entry)(void);
     uintptr_t stack_page;
     uintptr_t stack_top;

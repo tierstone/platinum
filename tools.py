@@ -102,8 +102,8 @@ def object_path_for(source: Path) -> Path:
     return BUILD_DIR.joinpath(*parts)
 
 
-def qemu_command() -> list[str]:
-    return [
+def qemu_command(serial_log: Path | None = None) -> list[str]:
+    command = [
         QEMU_BIN,
         "-machine", "q35",
         "-m", "512M",
@@ -111,5 +111,16 @@ def qemu_command() -> list[str]:
         "-drive", f"if=pflash,format=raw,file={OVMF_VARS_DST}",
         "-drive", f"format=raw,file=fat:rw:{FAT_ROOT}",
         "-nographic",
-        "-serial", "mon:stdio",
     ]
+
+    if serial_log is None:
+        command.extend([
+            "-serial", "mon:stdio",
+        ])
+    else:
+        command.extend([
+            "-monitor", "none",
+            "-serial", f"file:{serial_log}",
+        ])
+
+    return command

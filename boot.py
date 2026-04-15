@@ -4,6 +4,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 import subprocess
+import argparse
 
 from tools import (
     EFI_BOOT_BIN,
@@ -37,16 +38,19 @@ def prepare_fat_drive() -> None:
     copy_file(TARGET_EFI, EFI_BOOT_BIN)
 
 
-def launch_qemu() -> None:
+def launch_qemu(serial_log: Path | None = None) -> None:
     check_prerequisites()
     prepare_vars()
     prepare_fat_drive()
 
     try:
-        subprocess.run(qemu_command(), check=False)
+        subprocess.run(qemu_command(serial_log), check=False)
     except KeyboardInterrupt:
         raise SystemExit(0)
 
 
 if __name__ == "__main__":
-    launch_qemu()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--serial-log", type=Path)
+    args = parser.parse_args()
+    launch_qemu(args.serial_log)

@@ -45,6 +45,12 @@ python3 test_boot_modes.py
 
 # Repeat the boot-mode regression check
 python3 test_boot_modes.py --loops 10 --timeout 5
+
+# Hammer one path repeatedly
+python3 test_boot_modes.py --mode elf --loops 25 --timeout 5
+
+# Stress the yield-heavy user path
+python3 test_boot_modes.py --mode yield-stress --loops 25 --timeout 5
 ```
 
 Optional test builds:

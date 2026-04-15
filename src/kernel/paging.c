@@ -93,6 +93,34 @@ static int map_page_4k(uint64_t *pml4, uintptr_t virtual_address, uintptr_t phys
     return 1;
 }
 
+static uint64_t *walk_to_pt(uint64_t *pml4, uintptr_t virtual_address) {
+    size_t pml4_index;
+    size_t pdpt_index;
+    size_t pd_index;
+    uint64_t *pdpt;
+    uint64_t *pd;
+
+    pml4_index = (size_t)((virtual_address >> 39) & 0x1FFu);
+    pdpt_index = (size_t)((virtual_address >> 30) & 0x1FFu);
+    pd_index = (size_t)((virtual_address >> 21) & 0x1FFu);
+
+    if ((pml4[pml4_index] & paging_present) == 0u) {
+        return NULL;
+    }
+
+    pdpt = entry_table(pml4[pml4_index]);
+    if ((pdpt[pdpt_index] & paging_present) == 0u) {
+        return NULL;
+    }
+
+    pd = entry_table(pdpt[pdpt_index]);
+    if ((pd[pd_index] & paging_present) == 0u) {
+        return NULL;
+    }
+
+    return entry_table(pd[pd_index]);
+}
+
 static uintptr_t highest_physical_end(void) {
     uintptr_t highest = 0u;
     size_t index;
@@ -186,4 +214,58 @@ void paging_map_user_page(uintptr_t address_space, uintptr_t virtual_address, ui
 
 void paging_activate(uintptr_t address_space) {
     arch_load_cr3((uint64_t)address_space);
+}
+
+int paging_address_space_valid(uintptr_t address_space) {
+    uint64_t *pml4;
+    size_t index;
+
+    if (address_space == 0u) {
+        return 0;
+    }
+
+    pml4 = (uint64_t *)(void *)address_space;
+    for (index = 0u; index < 512u; ++index) {
+        if ((pml4[index] & paging_present) != (paging_kernel_pml4[index] & paging_present)) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+int paging_mapping_matches(uintptr_t address_space, uintptr_t virtual_address, uintptr_t physical_address, int user_accessible) {
+    size_t pt_index;
+    uint64_t *pml4;
+    uint64_t *pt;
+    uint64_t entry;
+
+    if (address_space == 0u) {
+        return 0;
+    }
+
+    virtual_address &= ~((uintptr_t)paging_page_size - 1u);
+    physical_address &= ~((uintptr_t)paging_page_size - 1u);
+    pml4 = (uint64_t *)(void *)address_space;
+    pt = walk_to_pt(pml4, virtual_address);
+    if (pt == NULL) {
+        return 0;
+    }
+
+    pt_index = (size_t)((virtual_address >> 12) & 0x1FFu);
+    entry = pt[pt_index];
+    if ((entry & paging_present) == 0u) {
+        return 0;
+    }
+    if ((entry & 0x000FFFFFFFFFF000ull) != (uint64_t)physical_address) {
+        return 0;
+    }
+    if (user_accessible) {
+        return (entry & paging_user) != 0u;
+    }
+    return (entry & paging_user) == 0u;
+}
+
+int paging_mapping_is_supervisor_only(uintptr_t address_space, uintptr_t virtual_address) {
+    return paging_mapping_matches(address_space, virtual_address, virtual_address, 0);
 }

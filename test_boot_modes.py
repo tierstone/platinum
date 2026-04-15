@@ -2,17 +2,41 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import subprocess
 import sys
 
 
-MODES = {
-    "off": ("sched ok", "worker"),
-    "c": ("sched ok", "user init", "U"),
-    "elf": ("sched ok", "user init", "U"),
+MODE_RULES = {
+    "off": {
+        "required": ("sched ok", "worker"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
+    },
+    "c": {
+        "required": ("sched ok", "user init", "U"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
+    },
+    "elf": {
+        "required": ("sched ok", "user init", "U"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
+    },
+    "bad-syscall": {
+        "required": ("sched ok", "user init", "V", "ring3 exit"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
+    },
+    "bad-elf": {
+        "required": ("user elf fail",),
+        "forbidden": ("trap ", "exit fail", "user as fail", "tss stack fail"),
+    },
+    "yield-stress": {
+        "required": ("sched ok", "user init", "Y"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
+    },
+    "bad-bootstrap": {
+        "required": ("sched bootstrap fail",),
+        "forbidden": ("trap ", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
+    },
 }
-
-NEGATIVE_MARKERS = ("trap", "fail")
 
 
 def text_output(data: str | bytes | None) -> str:
@@ -39,19 +63,30 @@ def run_command(command: list[str], timeout_seconds: float) -> tuple[int, str]:
 
 
 def require_markers(mode: str, output: str) -> None:
-    for marker in MODES[mode]:
+    for marker in MODE_RULES[mode]["required"]:
         if marker not in output:
             raise RuntimeError(f"missing marker: {marker}")
 
 
-def reject_markers(output: str) -> None:
-    lowered = output.lower()
-    for marker in NEGATIVE_MARKERS:
-        if marker in lowered:
-            raise RuntimeError(f"unexpected marker: {marker}")
+def reject_markers(mode: str, output: str) -> None:
+    lowered_lines = [line.lower().strip() for line in output.splitlines()]
+    for marker in MODE_RULES[mode]["forbidden"]:
+        lowered_marker = marker.lower()
+        if lowered_marker.endswith(" "):
+            for line in lowered_lines:
+                if line.startswith(lowered_marker.strip()):
+                    raise RuntimeError(f"unexpected marker: {marker}")
+        else:
+            for line in lowered_lines:
+                if lowered_marker in line:
+                    raise RuntimeError(f"unexpected marker: {marker}")
 
 
 def run_mode(mode: str, timeout_seconds: float, iteration: int) -> None:
+    log_dir = Path("build") / "test-logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{mode}-iteration-{iteration}.log"
+
     build_code, build_output = run_command(
         ["python3", "build.py", "all", "--user-init", mode],
         timeout_seconds,
@@ -62,7 +97,7 @@ def run_mode(mode: str, timeout_seconds: float, iteration: int) -> None:
         )
 
     boot_code, boot_output = run_command(
-        ["python3", "boot.py"],
+        ["timeout", f"{timeout_seconds}s", "python3", "boot.py", "--serial-log", str(log_path)],
         timeout_seconds,
     )
     if boot_code not in (0, 124):
@@ -70,17 +105,26 @@ def run_mode(mode: str, timeout_seconds: float, iteration: int) -> None:
             f"boot failed for mode={mode} iteration={iteration} code={boot_code}\n{boot_output}"
         )
 
+    serial_output = ""
+    if log_path.exists():
+        serial_output = log_path.read_text(encoding="utf-8", errors="replace")
+
     try:
-        require_markers(mode, boot_output)
-        reject_markers(boot_output)
+        require_markers(mode, serial_output)
+        reject_markers(mode, serial_output)
     except RuntimeError as exc:
         raise RuntimeError(
-            f"mode={mode} iteration={iteration}\n{exc}\n{boot_output}"
+            f"mode={mode} iteration={iteration}\n{exc}\nlog={log_path}\n{serial_output}\n{boot_output}"
         ) from exc
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--mode",
+        choices=["all"] + list(MODE_RULES.keys()),
+        default="all",
+    )
     parser.add_argument("--loops", type=int, default=1)
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
@@ -92,13 +136,25 @@ def main() -> int:
         print("timeout must be > 0", file=sys.stderr)
         return 1
 
+    if args.mode == "all":
+        modes = ("off", "c", "elf", "yield-stress", "bad-syscall", "bad-elf", "bad-bootstrap")
+    else:
+        modes = (args.mode,)
+
     try:
+        counts = {mode: 0 for mode in modes}
         for iteration in range(1, args.loops + 1):
-            for mode in ("off", "c", "elf"):
+            for mode in modes:
                 run_mode(mode, args.timeout, iteration)
+                counts[mode] += 1
+            if args.loops > 1:
+                print(f"iteration {iteration}/{args.loops} ok")
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+
+    for mode in modes:
+        print(f"{mode}: {counts[mode]} ok")
 
     return 0
 
