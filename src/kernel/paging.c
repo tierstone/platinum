@@ -14,7 +14,7 @@ static const uint64_t paging_flags_page = 0x003ull;
 static const uint64_t paging_page_size = 4096ull;
 static const uint64_t paging_max_address = 0x100000000ull;
 
-static uint64_t *paging_pml4;
+static uint64_t *paging_kernel_pml4;
 
 static void zero_page(uint64_t *page) {
     size_t index;
@@ -60,7 +60,7 @@ static uint64_t *get_or_create_next(uint64_t *table, size_t index, uint64_t flag
     return next;
 }
 
-static int map_page_4k(uintptr_t virtual_address, uintptr_t physical_address, uint64_t flags) {
+static int map_page_4k(uint64_t *pml4, uintptr_t virtual_address, uintptr_t physical_address, uint64_t flags) {
     size_t pml4_index;
     size_t pdpt_index;
     size_t pd_index;
@@ -74,7 +74,7 @@ static int map_page_4k(uintptr_t virtual_address, uintptr_t physical_address, ui
     pd_index = (size_t)((virtual_address >> 21) & 0x1FFu);
     pt_index = (size_t)((virtual_address >> 12) & 0x1FFu);
 
-    pdpt = get_or_create_next(paging_pml4, pml4_index, flags);
+    pdpt = get_or_create_next(pml4, pml4_index, flags);
     if (pdpt == NULL) {
         return 0;
     }
@@ -130,8 +130,8 @@ void paging_initialize(void) {
     uintptr_t limit;
     uintptr_t address;
 
-    paging_pml4 = alloc_table();
-    if (paging_pml4 == NULL) {
+    paging_kernel_pml4 = alloc_table();
+    if (paging_kernel_pml4 == NULL) {
         arch_halt_forever();
     }
 
@@ -142,23 +142,48 @@ void paging_initialize(void) {
 
     address = 0u;
     while (address < limit) {
-        if (!map_page_4k(address, address, paging_flags_page)) {
+        if (!map_page_4k(paging_kernel_pml4, address, address, paging_flags_page)) {
             arch_halt_forever();
         }
 
         address += (uintptr_t)paging_page_size;
     }
 
-    arch_load_cr3((uint64_t)(uintptr_t)paging_pml4);
+    arch_load_cr3((uint64_t)(uintptr_t)paging_kernel_pml4);
 }
 
-void paging_map_user_page(uintptr_t virtual_address, uintptr_t physical_address) {
-    virtual_address &= ~((uintptr_t)paging_page_size - 1u);
-    physical_address &= ~((uintptr_t)paging_page_size - 1u);
+uintptr_t paging_kernel_address_space(void) {
+    return (uintptr_t)paging_kernel_pml4;
+}
 
-    if (!map_page_4k(virtual_address, physical_address, paging_present | paging_writable | paging_user)) {
-        arch_halt_forever();
+uintptr_t paging_create_user_address_space(void) {
+    uint64_t *pml4;
+    size_t index;
+
+    pml4 = alloc_table();
+    if (pml4 == NULL) {
+        return 0u;
     }
 
-    arch_load_cr3((uint64_t)(uintptr_t)paging_pml4);
+    for (index = 0u; index < 512u; ++index) {
+        pml4[index] = paging_kernel_pml4[index];
+    }
+
+    return (uintptr_t)pml4;
+}
+
+void paging_map_user_page(uintptr_t address_space, uintptr_t virtual_address, uintptr_t physical_address) {
+    uint64_t *pml4;
+
+    virtual_address &= ~((uintptr_t)paging_page_size - 1u);
+    physical_address &= ~((uintptr_t)paging_page_size - 1u);
+    pml4 = (uint64_t *)(void *)address_space;
+
+    if (!map_page_4k(pml4, virtual_address, physical_address, paging_present | paging_writable | paging_user)) {
+        arch_halt_forever();
+    }
+}
+
+void paging_activate(uintptr_t address_space) {
+    arch_load_cr3((uint64_t)address_space);
 }

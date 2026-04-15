@@ -237,6 +237,7 @@ int elf_load_user_image(
     const uint8_t *image,
     size_t image_size,
     const struct user_virtual_layout *layout,
+    uintptr_t address_space,
     struct loaded_user_image *loaded_image
 )
 {
@@ -292,6 +293,7 @@ int elf_load_user_image(
 
     for (index = 0u; index < (uint16_t)((load_end - load_begin) / 4096u); ++index) {
         paging_map_user_page(
+            address_space,
             layout->image_base + (uintptr_t)index * 4096u,
             load_begin + (uintptr_t)index * 4096u
         );
@@ -302,11 +304,12 @@ int elf_load_user_image(
         return 0;
     }
 
-    paging_map_user_page(layout->stack_top - 4096u, user_stack_page);
+    paging_map_user_page(address_space, layout->stack_top - 4096u, user_stack_page);
 
     loaded_image->load_begin = layout->image_base;
     loaded_image->load_end = layout->image_base + (load_end - load_begin);
     loaded_image->entry = (void (*)(void))(layout->image_base + (uintptr_t)(header->entry - source_begin));
+    loaded_image->stack_page = user_stack_page;
     loaded_image->stack_top = layout->stack_top;
     return 1;
 }

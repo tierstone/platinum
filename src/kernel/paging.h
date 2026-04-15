@@ -10,6 +10,9 @@ enum {
 };
 
 void paging_initialize(void);
-void paging_map_user_page(uintptr_t virtual_address, uintptr_t physical_address);
+uintptr_t paging_kernel_address_space(void);
+uintptr_t paging_create_user_address_space(void);
+void paging_map_user_page(uintptr_t address_space, uintptr_t virtual_address, uintptr_t physical_address);
+void paging_activate(uintptr_t address_space);
 
 #endif

@@ -15,6 +15,7 @@ struct loaded_user_image {
     uintptr_t load_begin;
     uintptr_t load_end;
     void (*entry)(void);
+    uintptr_t stack_page;
     uintptr_t stack_top;
 };
 
@@ -22,6 +23,7 @@ int elf_load_user_image(
     const uint8_t *image,
     size_t image_size,
     const struct user_virtual_layout *layout,
+    uintptr_t address_space,
     struct loaded_user_image *loaded_image
 );
 

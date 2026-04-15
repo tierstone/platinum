@@ -59,6 +59,11 @@ static void configure_first_user_task(void) {
     struct user_task_bootstrap bootstrap;
 
     bootstrap.layout = first_user_layout;
+    bootstrap.address_space = paging_create_user_address_space();
+    if (bootstrap.address_space == 0u) {
+        write_line("user as fail");
+        arch_halt_forever();
+    }
 
     if (USER_INIT_USE_ELF) {
         struct loaded_user_image loaded_image;
@@ -69,18 +74,20 @@ static void configure_first_user_task(void) {
                 embedded_user_program_elf,
                 embedded_user_program_elf_size,
                 &bootstrap.layout,
+                bootstrap.address_space,
                 &loaded_image)) {
             write_line("user elf fail");
             arch_halt_forever();
         }
 
         trampoline_page = (uintptr_t)(void *)arch_user_program_entry & ~(uintptr_t)4095u;
-        paging_map_user_page(bootstrap.layout.trampoline_base, trampoline_page);
+        paging_map_user_page(bootstrap.address_space, bootstrap.layout.trampoline_base, trampoline_page);
         trampoline_entry = bootstrap.layout.trampoline_base +
             ((uintptr_t)(void *)arch_user_program_entry & (uintptr_t)4095u);
 
         bootstrap.trampoline_entry = (void (*)(void))trampoline_entry;
         bootstrap.user_entry = loaded_image.entry;
+        bootstrap.user_stack_page = loaded_image.stack_page;
         bootstrap.user_stack_top = loaded_image.stack_top;
     } else {
         uintptr_t trampoline_page;
@@ -98,9 +105,9 @@ static void configure_first_user_task(void) {
         trampoline_page = (uintptr_t)(void *)arch_user_init_entry & ~(uintptr_t)4095u;
         user_entry_page = (uintptr_t)(void *)user_init_main & ~(uintptr_t)4095u;
 
-        paging_map_user_page(bootstrap.layout.trampoline_base, trampoline_page);
-        paging_map_user_page(bootstrap.layout.image_base, user_entry_page);
-        paging_map_user_page(bootstrap.layout.stack_top - 4096u, user_stack_page);
+        paging_map_user_page(bootstrap.address_space, bootstrap.layout.trampoline_base, trampoline_page);
+        paging_map_user_page(bootstrap.address_space, bootstrap.layout.image_base, user_entry_page);
+        paging_map_user_page(bootstrap.address_space, bootstrap.layout.stack_top - 4096u, user_stack_page);
 
         trampoline_entry = bootstrap.layout.trampoline_base +
             ((uintptr_t)(void *)arch_user_init_entry & (uintptr_t)4095u);
@@ -109,6 +116,7 @@ static void configure_first_user_task(void) {
 
         bootstrap.trampoline_entry = (void (*)(void))trampoline_entry;
         bootstrap.user_entry = (void (*)(void))user_entry;
+        bootstrap.user_stack_page = user_stack_page;
         bootstrap.user_stack_top = bootstrap.layout.stack_top;
     }
 

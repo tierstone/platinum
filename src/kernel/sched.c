@@ -1,4 +1,5 @@
 #include "kernel/sched.h"
+#include "kernel/paging.h"
 #include "kernel/palloc.h"
 
 #include <stdint.h>
@@ -12,6 +13,7 @@ typedef enum task_state {
 
 typedef struct task {
     uintptr_t rsp;
+    uintptr_t cr3;
     task_state_t state;
     task_kind_t kind;
     uint32_t id;
@@ -150,6 +152,7 @@ static uintptr_t task_build_kernel_stack(void (*entry)(void))
 static uintptr_t task_build_user_stack(const struct user_task_bootstrap *bootstrap)
 {
     uintptr_t stack_top;
+    uintptr_t stack_page;
     uint64_t *sp;
 
     stack_top = bootstrap->user_stack_top;
@@ -157,7 +160,12 @@ static uintptr_t task_build_user_stack(const struct user_task_bootstrap *bootstr
         return 0u;
     }
 
-    sp = (uint64_t *)stack_top;
+    stack_page = bootstrap->user_stack_page;
+    if (stack_page == 0u) {
+        return 0u;
+    }
+
+    sp = (uint64_t *)(stack_page + 4096u);
 
     *--sp = 0x001Bull;
     *--sp = (uint64_t)stack_top;
@@ -196,6 +204,7 @@ static int task_create_kernel(task_t *task, uint32_t id, void (*entry)(void))
     }
 
     task->rsp = rsp;
+    task->cr3 = paging_kernel_address_space();
     task->state = TASK_RUNNABLE;
     task->kind = TASK_KERNEL;
     task->id = id;
@@ -214,6 +223,7 @@ static int task_create_user(task_t *task, uint32_t id, const struct user_task_bo
     }
 
     task->rsp = rsp;
+    task->cr3 = bootstrap->address_space;
     task->state = TASK_RUNNABLE;
     task->kind = TASK_USER;
     task->id = id;
@@ -233,11 +243,13 @@ void sched_initialize(void)
     sched_started = 0;
 
     task0.rsp = 0u;
+    task0.cr3 = 0u;
     task0.state = TASK_UNUSED;
     task0.kind = TASK_KERNEL;
     task0.id = 0u;
 
     task1.rsp = 0u;
+    task1.cr3 = 0u;
     task1.state = TASK_UNUSED;
     task1.kind = TASK_KERNEL;
     task1.id = 1u;
@@ -266,6 +278,7 @@ uintptr_t sched_tick(uintptr_t current_rsp)
     if (!sched_started) {
         sched_started = 1;
         current = user_task_enabled ? &task1 : &task0;
+        paging_activate(current->cr3);
         current->state = TASK_RUNNING;
         return current->rsp;
     }
@@ -277,6 +290,7 @@ uintptr_t sched_tick(uintptr_t current_rsp)
 
     current = sched_select_next(current);
 
+    paging_activate(current->cr3);
     current->state = TASK_RUNNING;
     return current->rsp;
 }
@@ -294,6 +308,7 @@ uintptr_t sched_exit_current(uintptr_t current_rsp)
     current->rsp = 0u;
     current->state = TASK_DONE;
     current = sched_select_next(current);
+    paging_activate(current->cr3);
     current->state = TASK_RUNNING;
     return current->rsp;
 }

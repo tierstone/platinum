@@ -62,7 +62,7 @@ The default remains `--user-init off`. The direct C user task path is the simple
 
 Focus: reach stable usermode execution.
 
-Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`, `exit`) work under QEMU. A disabled-by-default first user task path exists and works through the direct in-kernel C bootstrap. A proof-stage embedded static ELF64 path also works end-to-end for one test user program.
+Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`, `exit`) work under QEMU. A disabled-by-default first user task path exists and works through the direct in-kernel C bootstrap. A proof-stage embedded static ELF64 path also works end-to-end for one test user program. User tasks now carry their own page-table root, while still inheriting a shared kernel mapping base.
 
 * [x] UEFI entry — x86_64 COFF entry point (`boot.S`)
 * [x] Early serial output — UART `0x3F8` (`serial.c`)
@@ -88,7 +88,7 @@ Current status: timer-driven preemptive kernel threads and basic `int 0x80` sysc
 * [x] Run first usermode program
 * [ ] ELF loader (static binaries, beyond current proof-stage path)
 
-User task bootstrap note: enabling the current first-user-task path maps a small task-owned user virtual layout for trampoline, code, and stack before entering ring 3. The user task is scheduler-owned and timer-preempted. The current ELF path is still a temporary proof-stage loader for one embedded static ELF64 ET_EXEC image with PT_LOAD segments in a fixed physical load window and a bootstrap-provided user virtual layout, and it is not yet a finished userspace loading path. The paging model remains a temporary proof step, not memory isolation.
+User task bootstrap note: enabling the current first-user-task path builds a task-owned page-table root from a shared kernel mapping base, then maps a small task-owned user virtual layout for trampoline, code, and stack before entering ring 3. The user task is scheduler-owned and timer-preempted. The current ELF path is still a temporary proof-stage loader for one embedded static ELF64 ET_EXEC image with PT_LOAD segments in a fixed physical load window and a bootstrap-provided user virtual layout, and it is not yet a finished userspace loading path. The paging model remains a temporary proof step, not memory isolation.
 
 ### Phase 2: Core Kernel
 

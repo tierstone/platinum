@@ -16,8 +16,10 @@ struct user_virtual_layout {
 
 struct user_task_bootstrap {
     struct user_virtual_layout layout;
+    uintptr_t address_space;
     void (*trampoline_entry)(void);
     void (*user_entry)(void);
+    uintptr_t user_stack_page;
     uintptr_t user_stack_top;
 };
 
