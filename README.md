@@ -39,6 +39,12 @@ python3 build.py all
 
 # Launch in QEMU
 python3 boot.py
+
+# Run the current boot-mode regression check
+python3 test_boot_modes.py
+
+# Repeat the boot-mode regression check
+python3 test_boot_modes.py --loops 10 --timeout 5
 ```
 
 Optional test builds:

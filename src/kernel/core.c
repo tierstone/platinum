@@ -102,7 +102,7 @@ static void configure_first_user_task(void) {
             arch_halt_forever();
         }
 
-        trampoline_page = (uintptr_t)(void *)arch_user_init_entry & ~(uintptr_t)4095u;
+        trampoline_page = (uintptr_t)(void *)arch_user_program_entry & ~(uintptr_t)4095u;
         user_entry_page = (uintptr_t)(void *)user_init_main & ~(uintptr_t)4095u;
 
         paging_map_user_page(bootstrap.address_space, bootstrap.layout.trampoline_base, trampoline_page);
@@ -110,7 +110,7 @@ static void configure_first_user_task(void) {
         paging_map_user_page(bootstrap.address_space, bootstrap.layout.stack_top - 4096u, user_stack_page);
 
         trampoline_entry = bootstrap.layout.trampoline_base +
-            ((uintptr_t)(void *)arch_user_init_entry & (uintptr_t)4095u);
+            ((uintptr_t)(void *)arch_user_program_entry & (uintptr_t)4095u);
         user_entry = bootstrap.layout.image_base +
             ((uintptr_t)(void *)user_init_main & (uintptr_t)4095u);
 

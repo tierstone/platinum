@@ -1,7 +1,9 @@
 #include "kernel/sched.h"
 #include "kernel/paging.h"
 #include "kernel/palloc.h"
+#include "drivers/serial.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef enum task_state {
@@ -26,6 +28,38 @@ static int sched_started;
 static int user_task_enabled;
 static struct user_task_bootstrap user_task_bootstrap;
 static volatile uint64_t worker_counter;
+
+static size_t string_length(const char *text)
+{
+    size_t length;
+
+    length = 0u;
+    while (text[length] != '\0') {
+        ++length;
+    }
+
+    return length;
+}
+
+static void write_text(const char *text)
+{
+    serial_write(text, string_length(text));
+}
+
+static void write_line(const char *text)
+{
+    write_text(text);
+    serial_write("\r\n", 2u);
+}
+
+static void sched_fail(const char *text)
+{
+    write_line(text);
+
+    for (;;) {
+        __asm__ __volatile__("cli; hlt");
+    }
+}
 
 static task_t *sched_select_next(task_t *previous)
 {
@@ -215,6 +249,14 @@ static int task_create_user(task_t *task, uint32_t id, const struct user_task_bo
 {
     uintptr_t rsp;
 
+    if (bootstrap->address_space == 0u ||
+        bootstrap->trampoline_entry == 0 ||
+        bootstrap->user_entry == 0 ||
+        bootstrap->user_stack_page == 0u ||
+        bootstrap->user_stack_top == 0u) {
+        return 0;
+    }
+
     rsp = task_build_user_stack(bootstrap);
     if (rsp == 0u) {
         task->rsp = 0u;
@@ -232,6 +274,14 @@ static int task_create_user(task_t *task, uint32_t id, const struct user_task_bo
 
 void sched_enable_user_task(const struct user_task_bootstrap *bootstrap)
 {
+    if (bootstrap->address_space == 0u ||
+        bootstrap->trampoline_entry == 0 ||
+        bootstrap->user_entry == 0 ||
+        bootstrap->user_stack_page == 0u ||
+        bootstrap->user_stack_top == 0u) {
+        sched_fail("sched bootstrap fail");
+    }
+
     user_task_enabled = 1;
     user_task_bootstrap = *bootstrap;
 }
@@ -278,6 +328,9 @@ uintptr_t sched_tick(uintptr_t current_rsp)
     if (!sched_started) {
         sched_started = 1;
         current = user_task_enabled ? &task1 : &task0;
+        if (current->state != TASK_RUNNABLE) {
+            sched_fail("sched start state");
+        }
         paging_activate(current->cr3);
         current->state = TASK_RUNNING;
         return current->rsp;
@@ -286,10 +339,15 @@ uintptr_t sched_tick(uintptr_t current_rsp)
     if (current->state == TASK_RUNNING) {
         current->rsp = current_rsp;
         current->state = TASK_RUNNABLE;
+    } else {
+        sched_fail("sched tick state");
     }
 
     current = sched_select_next(current);
 
+    if (current->state != TASK_RUNNABLE) {
+        sched_fail("sched next state");
+    }
     paging_activate(current->cr3);
     current->state = TASK_RUNNING;
     return current->rsp;
@@ -300,14 +358,15 @@ uintptr_t sched_exit_current(uintptr_t current_rsp)
     (void)current_rsp;
 
     if (!sched_started || current == 0) {
-        for (;;) {
-            __asm__ __volatile__("cli; hlt");
-        }
+        sched_fail("sched exit state");
     }
 
     current->rsp = 0u;
     current->state = TASK_DONE;
     current = sched_select_next(current);
+    if (current->state != TASK_RUNNABLE) {
+        sched_fail("sched exit next");
+    }
     paging_activate(current->cr3);
     current->state = TASK_RUNNING;
     return current->rsp;
