@@ -36,8 +36,14 @@ struct syscall_frame {
 };
 
 static volatile uint64_t kernel_ticks;
-static const int user_init_enabled = 0;
-static const int user_init_use_elf = 0;
+
+#ifndef USER_INIT_ENABLED
+#define USER_INIT_ENABLED 0
+#endif
+
+#ifndef USER_INIT_USE_ELF
+#define USER_INIT_USE_ELF 0
+#endif
 
 void user_init_main(void);
 extern const uint8_t embedded_user_program_elf[];
@@ -47,7 +53,7 @@ static void write_line(const char *text);
 static void configure_first_user_task(void) {
     struct user_task_bootstrap bootstrap;
 
-    if (user_init_use_elf) {
+    if (USER_INIT_USE_ELF) {
         if (!elf_load_user_image(embedded_user_program_elf, embedded_user_program_elf_size, &bootstrap)) {
             write_line("user elf fail");
             arch_halt_forever();
@@ -240,14 +246,14 @@ void kernel_main(void *image_handle, void *system_table) {
     pit_initialize(100u);
     write_line("pit ok");
 
-    if (user_init_enabled) {
+    if (USER_INIT_ENABLED) {
         configure_first_user_task();
     }
 
     sched_initialize();
     write_line("sched ok");
 
-    if (user_init_enabled) {
+    if (USER_INIT_ENABLED) {
         write_line("user init");
     }
 

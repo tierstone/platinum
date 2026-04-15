@@ -23,7 +23,7 @@ from tools import (
 )
 
 
-def compile_sources(sources: list[Path], flags: list[str]) -> list[Path]:
+def compile_sources(sources: list[Path], flags: list[str], extra_flags: list[str]) -> list[Path]:
     objects: list[Path] = []
 
     for source in sources:
@@ -32,7 +32,7 @@ def compile_sources(sources: list[Path], flags: list[str]) -> list[Path]:
         else:
             output = BUILD_DIR / "generated" / (source.stem + ".o")
         ensure_dir(output.parent)
-        run([CLANG_BIN] + flags + ["-c", str(source), "-o", str(output)])
+        run([CLANG_BIN] + flags + extra_flags + ["-c", str(source), "-o", str(output)])
         objects.append(output)
 
     return objects
@@ -125,17 +125,40 @@ def clean() -> None:
     remove_tree(BUILD_DIR)
 
 
-def build() -> None:
+def user_init_flags(mode: str) -> list[str]:
+    if mode == "off":
+        return [
+            "-DUSER_INIT_ENABLED=0",
+            "-DUSER_INIT_USE_ELF=0",
+        ]
+
+    if mode == "c":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+        ]
+
+    if mode == "elf":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=1",
+        ]
+
+    raise ValueError(f"unknown user init mode: {mode}")
+
+
+def build(user_init_mode: str) -> None:
     c_sources, asm_sources = source_files()
     user_elf = build_user_program()
     generated_blob = generate_user_blob_source(user_elf)
+    extra_cflags = user_init_flags(user_init_mode)
 
     ensure_dir(BUILD_DIR)
 
     objects: list[Path] = []
-    objects.extend(compile_sources(c_sources, CFLAGS))
-    objects.extend(compile_sources(asm_sources, ASFLAGS))
-    objects.extend(compile_sources([generated_blob], CFLAGS))
+    objects.extend(compile_sources(c_sources, CFLAGS, extra_cflags))
+    objects.extend(compile_sources(asm_sources, ASFLAGS, []))
+    objects.extend(compile_sources([generated_blob], CFLAGS, extra_cflags))
     link_efi(objects)
 
     print(f"Output: {TARGET_EFI}")
@@ -144,13 +167,19 @@ def build() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("target", choices=["all", "efi", "clean"])
+    parser.add_argument(
+        "--user-init",
+        choices=["off", "c", "elf"],
+        default="off",
+        help="select first scheduled user task path for test builds",
+    )
     args = parser.parse_args()
 
     if args.target == "clean":
         clean()
         return
 
-    build()
+    build(args.user_init)
 
 
 if __name__ == "__main__":
