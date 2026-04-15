@@ -14,7 +14,7 @@
 
 ## Design Philosophy
 
-/p/OS is a pragmatic hybrid. We take the usability of Linux (GNU tools, ELF binaries), the security mindset of OpenBSD (privilege separation, clean code), and the architectural elegance of FreeBSD (userspace networking, simple init). It’s built on standard Unix principles, stripped of hardware baggage to run purely on QEMU. The goal isn’t to reinvent the wheel, but to build a smaller, cleaner one from scratch.
+/p/OS is a pragmatic hybrid. It takes the usability of Linux (GNU tools, ELF binaries), the security mindset of OpenBSD (privilege separation, clean code), and the architectural simplicity of FreeBSD (userspace networking, simple init). Built on standard Unix principles, stripped of hardware baggage to run purely on QEMU. The goal isn't to reinvent the wheel, just build a smaller, cleaner one from scratch.
 
 ## AI Policy
 
@@ -27,7 +27,7 @@ All code committed to the repository must be:
 
 Automated or agentic workflows that generate and publish code without human review are not permitted.
 
-The standard is simple: if you cannot explain the code, it does not belong in the tree.
+The rule is simple: if you can't explain the code, it doesn't belong in the tree.
 
 ## Build & Run
 
@@ -60,26 +60,26 @@ python3 build.py all --user-init c
 python3 build.py all --user-init elf
 ```
 
-The default remains `--user-init off`. The direct C user task path is the simpler proof path. The embedded ELF path is now build-selectable and proven end-to-end for one embedded static ELF64 ET_EXEC test program, but it is still a proof-stage loader rather than a general userspace loading system.
+The default remains `--user-init off`. The direct C user task path is the simpler proof path. The embedded ELF path is build-selectable and proven end-to-end for one embedded static ELF64 ET_EXEC test program, but it's still a proof-stage loader, not a general userspace loading system.
 
 ## Roadmap
 
 ### Phase 1: Kernel Bring-up
 
-Focus: reach stable usermode execution.
+Focus: reach stable scheduled usermode execution.
 
-Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`, `exit`) work under QEMU. A disabled-by-default first user task path exists and works through the direct in-kernel C bootstrap. A proof-stage embedded static ELF64 path also works end-to-end for one test user program. User tasks now carry their own page-table root, while still inheriting a shared kernel mapping base.
+Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`, `exit`) work under QEMU. A disabled-by-default first user task path exists and works through the direct in-kernel C bootstrap. A proof-stage embedded static ELF64 path also works end-to-end for one test user program, but that path is still scaffolding rather than a finished program loader.
 
-* [x] UEFI entry — x86_64 COFF entry point (`boot.S`)
-* [x] Early serial output — UART `0x3F8` (`serial.c`)
-* [x] Build pipeline — Clang + `lld-link`
+* [x] UEFI entry (x86_64 COFF entry point, `boot.S`)
+* [x] Early serial output (UART `0x3F8`, `serial.c`)
+* [x] Build pipeline (Clang + `lld-link`)
 * [x] QEMU/OVMF launch (`boot.py`)
-* [x] ExitBootServices — leave EFI and enter kernel context
+* [x] ExitBootServices (leave EFI and enter kernel context)
 * [x] GDT setup
 * [x] IDT setup + basic exception handlers
 * [x] UEFI memory map parsing
-* [x] Paging — 4KB pages, initial identity map
-* [x] Physical page allocator — reusable free-list
+* [x] Paging (4KB pages, initial identity map)
+* [x] Physical page allocator (reusable free-list)
 * [x] Timer interrupt (PIT via QEMU)
 * [x] Minimal preemptive scheduler
 * [x] Kernel thread context switching
@@ -88,26 +88,27 @@ Current status: timer-driven preemptive kernel threads and basic `int 0x80` sysc
 * [x] First scheduled user task bootstrap
 * [x] Ring3 syscall return + task done state
 * [x] Persistent first user C task loop
-* [x] Tiny embedded static ELF64 build scaffolding
-* [x] Tiny embedded static ELF64 user loader scaffolding
-* [x] Embedded static ELF64 boot path proven end-to-end
 * [x] Run first usermode program
-* [ ] ELF loader (static binaries, beyond current proof-stage path)
 
-User task bootstrap note: enabling the current first-user-task path builds a task-owned page-table root from a shared kernel mapping base, then maps a small task-owned user virtual layout for trampoline, code, and stack before entering ring 3. The user task is scheduler-owned and timer-preempted. The current ELF path is still a temporary proof-stage loader for one embedded static ELF64 ET_EXEC image with PT_LOAD segments in a fixed physical load window and a bootstrap-provided user virtual layout, and it is not yet a finished userspace loading path. The paging model remains a temporary proof step, not memory isolation.
+### Phase 2: Memory and Process Foundations
 
-### Phase 2: Core Kernel
+Focus: turn proof-stage userspace execution into a real kernel/userspace boundary.
 
-Focus: make the kernel usable, not just alive.
-
-* [ ] Virtual memory refinement (move beyond pure identity map)
+* [ ] Static ELF loader for normal static binaries
+* [ ] User address-space refinement
+* [ ] Virtual memory refinement
 * [ ] Kernel heap
 * [ ] Buddy allocator
 * [ ] Slab allocator
+
+### Phase 3: Kernel Interfaces
+
+Focus: provide the basic kernel abstractions userspace will need.
+
 * [ ] File descriptor layer
 * [ ] Basic VFS (inodes, dentries)
 
-### Phase 3: Storage
+### Phase 4: Storage
 
 Focus: persistent state.
 
@@ -118,32 +119,32 @@ Focus: persistent state.
 
 *(Optional, later)*
 
-* [ ] `/p/FS` — log-structured, CoW design
+* [ ] `/p/FS` (log-structured, CoW design)
 
-### Phase 4: Userspace
+### Phase 5: Base Userspace
 
-Focus: a usable system.
+Focus: first usable system.
 
-* [ ] `pinit` — PID 1
-* [ ] `psup` — service supervisor
-* [ ] `sh` — basic shell
+* [ ] `pinit` (PID 1)
+* [ ] `psup` (service supervisor)
+* [ ] `sh` (basic shell)
 * [ ] `login` / `getty`
 * [ ] Core utilities (`cat`, `ls`, `cp`, `rm`, etc.)
 
-### Phase 5: Networking
+### Phase 6: Networking
 
 Focus: connectivity.
 
 * [ ] VirtIO-net driver
-* [ ] `netd` — userspace TCP/IP stack
+* [ ] `netd` (userspace TCP/IP stack)
 * [ ] DHCP client
 * [ ] Basic tools (`ping`, `ip/ifconfig`)
 * [ ] SSH (Dropbear/OpenSSH, musl-linked)
 * [ ] Minimal HTTP client (`curl`/`wget`)
 
-### Phase 6: System Polish
+### Phase 7: System Polish
 
-* [ ] `logd` — logging daemon
+* [ ] `logd` (logging daemon)
 * [ ] `cron`
 * [ ] Process tools (`ps`, `top`, `kill`, `nice`)
 * [ ] `man` viewer
