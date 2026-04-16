@@ -1,5 +1,6 @@
 #include "kernel/core.h"
 #include "kernel/elf.h"
+#include "kernel/fd.h"
 #include "kernel/gdt.h"
 #include "kernel/heap.h"
 #include "kernel/idt.h"
@@ -282,6 +283,7 @@ uintptr_t kernel_timer_tick(uintptr_t current_rsp) {
 
 uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
     struct syscall_frame *frame = (struct syscall_frame *)(void *)current_rsp;
+    struct fd_table *fd_table;
 
     if (frame->rax == SYS_PUTC) {
         char ch = (char)(frame->rdi & 0xFFu);
@@ -304,6 +306,40 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
         write_line("ring3 exit");
         frame->rax = 0u;
         return sched_exit_current(current_rsp);
+    }
+
+    fd_table = sched_current_fd_table();
+
+    if (frame->rax == SYS_WRITE) {
+        if (fd_table == 0) {
+            frame->rax = (uint64_t)-1;
+            return current_rsp;
+        }
+        frame->rax = (uint64_t)(int64_t)fd_table_write(
+            fd_table,
+            (int)frame->rdi,
+            (const void *)(uintptr_t)frame->rsi,
+            (size_t)frame->rdx
+        );
+        return current_rsp;
+    }
+
+    if (frame->rax == SYS_CLOSE) {
+        if (fd_table == 0) {
+            frame->rax = (uint64_t)-1;
+            return current_rsp;
+        }
+        frame->rax = (uint64_t)(int64_t)fd_table_close(fd_table, (int)frame->rdi);
+        return current_rsp;
+    }
+
+    if (frame->rax == SYS_DUP) {
+        if (fd_table == 0) {
+            frame->rax = (uint64_t)-1;
+            return current_rsp;
+        }
+        frame->rax = (uint64_t)(int64_t)fd_table_dup(fd_table, (int)frame->rdi);
+        return current_rsp;
     }
 
     frame->rax = (uint64_t)-1;
@@ -340,6 +376,8 @@ void kernel_main(void *image_handle, void *system_table) {
 
     heap_initialize();
     heap_self_test();
+
+    fd_self_test();
 
     {
         uintptr_t kernel_rsp0 = palloc_alloc();

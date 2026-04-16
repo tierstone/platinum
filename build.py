@@ -179,6 +179,13 @@ def user_init_flags(mode: str) -> list[str]:
             "-DUSER_TEST_BAD_BOOTSTRAP=1",
         ]
 
+    if mode == "fd-write":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_FD_WRITE=1",
+        ]
+
     raise ValueError(f"unknown user init mode: {mode}")
 
 
@@ -212,7 +219,7 @@ def main() -> None:
     parser.add_argument("target", choices=["all", "efi", "clean"])
     parser.add_argument(
         "--user-init",
-        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap"],
+        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write"],
         default="off",
         help="select first scheduled user task path for test builds",
     )

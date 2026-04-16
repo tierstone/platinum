@@ -19,6 +19,20 @@ static inline uint64_t user_syscall1(uint64_t number, uint64_t arg0)
     return result;
 }
 
+static inline uint64_t user_syscall3(uint64_t number, uint64_t arg0, uint64_t arg1, uint64_t arg2)
+{
+    uint64_t result;
+
+    __asm__ __volatile__(
+        "int $0x80"
+        : "=a"(result)
+        : "a"(number), "D"(arg0), "S"(arg1), "d"(arg2)
+        : "memory"
+    );
+
+    return result;
+}
+
 static inline void user_sys_putc(char ch)
 {
     (void)user_syscall1((uint64_t)SYS_PUTC, (uint64_t)(uint8_t)ch);
@@ -37,6 +51,21 @@ static inline uint64_t user_sys_get_ticks(void)
 static inline void user_sys_exit(void)
 {
     (void)user_syscall1((uint64_t)SYS_EXIT, 0u);
+}
+
+static inline int64_t user_sys_write(int fd, const void *buffer, uint64_t count)
+{
+    return (int64_t)user_syscall3((uint64_t)SYS_WRITE, (uint64_t)fd, (uint64_t)(uintptr_t)buffer, count);
+}
+
+static inline int64_t user_sys_close(int fd)
+{
+    return (int64_t)user_syscall1((uint64_t)SYS_CLOSE, (uint64_t)fd);
+}
+
+static inline int64_t user_sys_dup(int fd)
+{
+    return (int64_t)user_syscall1((uint64_t)SYS_DUP, (uint64_t)fd);
 }
 
 #endif

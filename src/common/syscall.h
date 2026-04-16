@@ -5,5 +5,8 @@
 #define SYS_YIELD 1
 #define SYS_GET_TICKS 2
 #define SYS_EXIT 3
+#define SYS_WRITE 4
+#define SYS_CLOSE 5
+#define SYS_DUP 6
 
 #endif

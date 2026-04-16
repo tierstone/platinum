@@ -1,6 +1,8 @@
 #ifndef SCHED_H
 #define SCHED_H
 
+#include "kernel/fd.h"
+
 #include <stdint.h>
 
 typedef enum task_kind {
@@ -23,6 +25,7 @@ struct user_task_bootstrap {
     uintptr_t user_stack_top;
 };
 
+struct fd_table *sched_current_fd_table(void);
 void sched_enable_user_task(const struct user_task_bootstrap *bootstrap);
 void sched_initialize(void);
 uintptr_t sched_exit_current(uintptr_t current_rsp);

@@ -1,3 +1,4 @@
+#include "kernel/fd.h"
 #include "kernel/sched.h"
 #include "kernel/paging.h"
 #include "kernel/palloc.h"
@@ -19,6 +20,7 @@ typedef struct task {
     task_state_t state;
     task_kind_t kind;
     uint32_t id;
+    struct fd_table fd_table;
 } task_t;
 
 static task_t task0;
@@ -264,6 +266,10 @@ static int task_create_kernel(task_t *task, uint32_t id, void (*entry)(void))
     task->state = TASK_RUNNABLE;
     task->kind = TASK_KERNEL;
     task->id = id;
+    fd_table_initialize(&task->fd_table);
+    if (!fd_table_seed_console(&task->fd_table)) {
+        return 0;
+    }
     return 1;
 }
 
@@ -291,6 +297,10 @@ static int task_create_user(task_t *task, uint32_t id, const struct user_task_bo
     task->state = TASK_RUNNABLE;
     task->kind = TASK_USER;
     task->id = id;
+    fd_table_initialize(&task->fd_table);
+    if (!fd_table_seed_console(&task->fd_table)) {
+        return 0;
+    }
     return 1;
 }
 
@@ -322,12 +332,14 @@ void sched_initialize(void)
     task0.state = TASK_UNUSED;
     task0.kind = TASK_KERNEL;
     task0.id = 0u;
+    fd_table_initialize(&task0.fd_table);
 
     task1.rsp = 0u;
     task1.cr3 = 0u;
     task1.state = TASK_UNUSED;
     task1.kind = TASK_KERNEL;
     task1.id = 1u;
+    fd_table_initialize(&task1.fd_table);
 
     if (!task_create_kernel(&task0, 0u, task_idle)) {
         for (;;) {
@@ -385,6 +397,7 @@ uintptr_t sched_exit_current(uintptr_t current_rsp)
         sched_fail("sched exit state");
     }
 
+    fd_table_close_all(&current->fd_table);
     current->rsp = 0u;
     current->state = TASK_DONE;
     current = sched_select_next(current);
@@ -415,4 +428,13 @@ task_kind_t sched_current_task_kind(void)
     }
 
     return current->kind;
+}
+
+struct fd_table *sched_current_fd_table(void)
+{
+    if (current == 0) {
+        return 0;
+    }
+
+    return &current->fd_table;
 }

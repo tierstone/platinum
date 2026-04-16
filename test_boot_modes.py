@@ -48,6 +48,11 @@ MODE_RULES = {
         "required": ("sched bootstrap fail",),
         "forbidden": ("trap ", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
     },
+    "fd-write": {
+        "build_args": (),
+        "required": ("sched ok", "user init", "FD", "ring3 exit"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
+    },
 }
 
 
@@ -154,7 +159,7 @@ def main() -> int:
         return 1
 
     if args.mode == "all":
-        modes = ("off", "c", "elf", "elf-pulse", "yield-stress", "bad-syscall", "bad-elf", "bad-bootstrap")
+        modes = ("off", "c", "elf", "elf-pulse", "yield-stress", "bad-syscall", "bad-elf", "bad-bootstrap", "fd-write")
     else:
         modes = (args.mode,)
 
