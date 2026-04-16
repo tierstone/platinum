@@ -34,45 +34,50 @@ The rule is simple: if you can't explain the code, it doesn't belong in the tree
 
 ## Build & Run
 
-**Prerequisites:** Clang/LLVM (`clang`, `lld-link`), Python 3, QEMU, OVMF (`edk2-ovmf`).
+**Prerequisites:** Clang/LLVM (`clang`, `lld-link`, `ld.lld`), Python 3, QEMU, OVMF (`edk2-ovmf`).
 
 ```bash
+# Quick environment check
+python3 manage.py doctor
+
 # Build the EFI binary
-python3 build.py all
+python3 manage.py build
 
 # Launch in QEMU
-python3 boot.py
+python3 manage.py boot
 
-# Run the current boot-mode regression check
-python3 test_boot_modes.py
+# Run the standard regression matrix once
+python3 manage.py verify
 
-# Repeat the boot-mode regression check
-python3 test_boot_modes.py --loops 10 --timeout 5
+# Verify one path
+python3 manage.py verify --mode elf
 
-# Hammer one path repeatedly
-python3 test_boot_modes.py --mode elf --loops 25 --timeout 5
+# Stress one path
+python3 manage.py stress --mode yield-stress --loops 25 --timeout 5
 
-# Stress the yield-heavy user path
-python3 test_boot_modes.py --mode yield-stress --loops 25 --timeout 5
+# Clean build artifacts
+python3 manage.py clean
 ```
 
 Optional test builds:
 
 ```bash
 # Default known-good worker boot path
-python3 build.py all --user-init off
+python3 manage.py build --user-init off
 
 # Direct in-kernel C user task bootstrap
-python3 build.py all --user-init c
+python3 manage.py build --user-init c
 
 # Embedded static ELF user task bootstrap
-python3 build.py all --user-init elf
+python3 manage.py build --user-init elf
 
 # Same ELF path, second embedded user program source
-python3 build.py all --user-init elf --user-program pulse
+python3 manage.py build --user-init elf --user-program pulse
 ```
 
-The default remains `--user-init off`. The direct C user task path is simpler proof path. Embedded ELF path is build-selectable and proven end-to-end for embedded static ELF64 ET_EXEC test programs. Loader handles normal `PT_LOAD` segment loading for static x86_64 ELF64 inputs, and build tooling can choose between multiple embedded user ELF sources, but whole path is still proof-stage and not a general file-backed userspace loading system.
+The default remains `--user-init off`. The direct C user task path is simpler proof path. Embedded ELF path is build-selectable and proven end-to-end for multiple embedded static ELF64 ET_EXEC test programs. Loader handles normal `PT_LOAD` segment loading for static x86_64 ELF64 inputs, and build tooling can choose between multiple embedded user ELF sources, but whole path is still proof-stage and not a general file-backed userspace loading system.
+
+`manage.py` is the primary entry point. Legacy wrappers `build.py`, `boot.py`, and `test_boot_modes.py` still exist for compatibility.
 
 ## Language Plan
 
@@ -109,7 +114,7 @@ This is a practical split, not a religion.
 
 Focus: reach stable scheduled usermode execution.
 
-Current status: timer-driven preemptive kernel threads and small `int 0x80` syscall ABI work under QEMU. Current syscall set includes `putc`, `yield`, `get_ticks`, `exit`, plus minimal fd-backed `read`, `write`, `close`, `dup`, and `open`, with consistent `0` / value / `-1` return behavior. Small kernel heap is live and exercised during bring-up. Small VFS skeleton is also live now, with explicit vnode-style nodes, open-file objects, and a tiny absolute-path in-memory namespace over current fd-backed stdio. Disabled-by-default first user task path exists and works through direct in-kernel C bootstrap. Proof-stage embedded static ELF64 path also works end-to-end for multiple embedded test user programs, handles normal `PT_LOAD` segment loading by ELF virtual address layout, and is still not a general file-backed program loading system.
+Current status: timer-driven preemptive kernel threads and small `int 0x80` syscall ABI work under QEMU. Current syscall set includes `putc`, `yield`, `get_ticks`, `exit`, plus minimal fd-backed `read`, `write`, `close`, `dup`, and `open`, with consistent `0` / value / `-1` return behavior. Small kernel heap is live and exercised during bring-up. Small VFS skeleton is live, with explicit vnode-style nodes, open-file objects, and tiny absolute-path in-memory namespace support. `open` now works over fixed namespace entries such as `/dev/console` and `/etc/banner`. Disabled-by-default first user task path exists and works through direct in-kernel C bootstrap. Proof-stage embedded static ELF64 path also works end-to-end for multiple embedded test user programs, handles normal `PT_LOAD` segment loading by ELF virtual address layout, and is still not a general file-backed program loading system. Python tooling now uses `manage.py` as unified entry point, and verification covers worker, direct user, embedded ELF, stress, fd, and negative-path runtime cases.
 
 * [x] UEFI entry (x86_64 COFF entry point, `boot.S`)
 * [x] Early serial output (UART `0x3F8`, `serial.c`)
