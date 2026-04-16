@@ -109,7 +109,7 @@ This is a practical split, not a religion.
 
 Focus: reach stable scheduled usermode execution.
 
-Current status: timer-driven preemptive kernel threads and small `int 0x80` syscall ABI work under QEMU. Current syscall set includes `putc`, `yield`, `get_ticks`, `exit`, plus minimal fd-backed `read`, `write`, `close`, and `dup` over console-backed stdio objects, with consistent `0` / value / `-1` return behavior. Small kernel heap is live and exercised during bring-up. Small VFS skeleton is also live now, with explicit vnode-style nodes and open-file objects under current fd-backed stdio. Disabled-by-default first user task path exists and works through direct in-kernel C bootstrap. Proof-stage embedded static ELF64 path also works end-to-end for multiple embedded test user programs, handles normal `PT_LOAD` segment loading by ELF virtual address layout, and is still not a general file-backed program loading system.
+Current status: timer-driven preemptive kernel threads and small `int 0x80` syscall ABI work under QEMU. Current syscall set includes `putc`, `yield`, `get_ticks`, `exit`, plus minimal fd-backed `read`, `write`, `close`, `dup`, and `open`, with consistent `0` / value / `-1` return behavior. Small kernel heap is live and exercised during bring-up. Small VFS skeleton is also live now, with explicit vnode-style nodes, open-file objects, and a tiny absolute-path in-memory namespace over current fd-backed stdio. Disabled-by-default first user task path exists and works through direct in-kernel C bootstrap. Proof-stage embedded static ELF64 path also works end-to-end for multiple embedded test user programs, handles normal `PT_LOAD` segment loading by ELF virtual address layout, and is still not a general file-backed program loading system.
 
 * [x] UEFI entry (x86_64 COFF entry point, `boot.S`)
 * [x] Early serial output (UART `0x3F8`, `serial.c`)
@@ -129,7 +129,7 @@ Current status: timer-driven preemptive kernel threads and small `int 0x80` sysc
 * [x] Kernel thread context switching
 * [x] Syscall entry via `int 0x80`
 * [x] Shared syscall number definitions
-* [x] Minimal fd syscalls (`read`, `write`, `close`, `dup`)
+* [x] Minimal fd syscalls (`read`, `write`, `close`, `dup`, `open`)
 * [x] First scheduled user task bootstrap
 * [x] Ring3 syscall return + task done state
 * [x] Persistent first user C task loop
@@ -151,7 +151,7 @@ Focus: provide the basic kernel abstractions userspace will need.
 
 * [ ] Syscall interface cleanup and expansion
 * [ ] File descriptor growth beyond console-backed stdio and `read` / `write` / `close` / `dup`
-* [ ] Path lookup and open over the VFS skeleton
+* [ ] VFS namespace growth beyond tiny static absolute-path lookup
 * [ ] Basic VFS namespace objects
 
 ### Phase 4: Storage

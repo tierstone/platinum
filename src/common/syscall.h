@@ -11,7 +11,8 @@ enum {
     SYS_READ = 4,
     SYS_WRITE = 5,
     SYS_CLOSE = 6,
-    SYS_DUP = 7
+    SYS_DUP = 7,
+    SYS_OPEN = 8
 };
 
 enum {

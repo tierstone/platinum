@@ -101,4 +101,9 @@ static inline int64_t user_sys_dup(int fd)
     return (int64_t)user_syscall1((uint64_t)SYS_DUP, (uint64_t)fd);
 }
 
+static inline int64_t user_sys_open(const char *path)
+{
+    return (int64_t)user_syscall1((uint64_t)SYS_OPEN, (uint64_t)(uintptr_t)path);
+}
+
 #endif

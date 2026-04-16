@@ -7,7 +7,8 @@
 typedef enum vfs_node_kind {
     VFS_NODE_NONE = 0,
     VFS_NODE_PLACEHOLDER = 1,
-    VFS_NODE_CONSOLE = 2
+    VFS_NODE_CONSOLE = 2,
+    VFS_NODE_STATIC_TEXT = 3
 } vfs_node_kind_t;
 
 struct vfs_node;
@@ -38,6 +39,8 @@ void vfs_node_initialize(
     const struct vfs_node_ops *ops,
     void *data
 );
+void vfs_namespace_initialize(void);
+struct vfs_file *vfs_open_path(const char *path);
 struct vfs_file *vfs_file_open(struct vfs_node *node);
 int vfs_file_retain(struct vfs_file *file);
 int vfs_file_close(struct vfs_file *file);

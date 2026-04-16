@@ -39,6 +39,39 @@ void user_init_main(void)
     }
 
     user_sys_exit();
+#elif defined(USER_TEST_OPEN)
+    char ch;
+    int64_t fd;
+    char path[12];
+    char ok;
+
+    path[0] = '/';
+    path[1] = 'e';
+    path[2] = 't';
+    path[3] = 'c';
+    path[4] = '/';
+    path[5] = 'b';
+    path[6] = 'a';
+    path[7] = 'n';
+    path[8] = 'n';
+    path[9] = 'e';
+    path[10] = 'r';
+    path[11] = '\0';
+
+    fd = user_sys_open(path);
+    ok = 'O';
+    ch = 0;
+    if (fd < 0 || user_sys_read((int)fd, &ch, 1u) != 1 || ch != 'p' || user_sys_close((int)fd) != 0) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    if (user_sys_write(1, &ok, 1u) != 1 || user_sys_write(1, &ch, 1u) != 1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
 #elif defined(USER_TEST_BAD_SYSCALL)
     uint64_t result;
 

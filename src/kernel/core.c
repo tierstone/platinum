@@ -296,6 +296,28 @@ static int syscall_buffer_valid(const void *buffer, size_t count)
     return buffer != 0;
 }
 
+static int syscall_copy_path(char *dst, size_t dst_size, const char *src)
+{
+    size_t index;
+
+    if (dst == 0 || dst_size == 0u || src == 0) {
+        return 0;
+    }
+
+    if (src[0] != '/') {
+        return 0;
+    }
+
+    for (index = 0u; index + 1u < dst_size; ++index) {
+        dst[index] = src[index];
+        if (src[index] == '\0') {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
     struct syscall_frame *frame = (struct syscall_frame *)(void *)current_rsp;
     struct fd_table *fd_table;
@@ -367,6 +389,35 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
         }
         syscall_return(frame, (uint64_t)(int64_t)fd_table_dup(fd_table, (int)frame->rdi));
         return current_rsp;
+    case SYS_OPEN: {
+        char path[64];
+        struct vfs_file *file;
+        fd_kind_t kind;
+        int fd;
+
+        if (fd_table == 0 ||
+            !syscall_copy_path(path, sizeof(path), (const char *)(uintptr_t)frame->rdi)) {
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
+
+        file = vfs_open_path(path);
+        if (file == 0) {
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
+
+        kind = file->node->kind == VFS_NODE_CONSOLE ? FD_KIND_CONSOLE : FD_KIND_PLACEHOLDER;
+        fd = fd_table_install(fd_table, kind, file);
+        if (fd < 0) {
+            (void)vfs_file_close(file);
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
+
+        syscall_return(frame, (uint64_t)(int64_t)fd);
+        return current_rsp;
+    }
     default:
         syscall_return(frame, SYS_RESULT_ERROR);
         return current_rsp;
@@ -404,6 +455,7 @@ void kernel_main(void *image_handle, void *system_table) {
     heap_initialize();
     heap_self_test();
 
+    vfs_namespace_initialize();
     vfs_self_test();
     fd_self_test();
 
