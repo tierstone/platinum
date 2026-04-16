@@ -1,6 +1,7 @@
 #include "kernel/core.h"
 #include "kernel/elf.h"
 #include "kernel/gdt.h"
+#include "kernel/heap.h"
 #include "kernel/idt.h"
 #include "kernel/memmap.h"
 #include "kernel/paging.h"
@@ -336,6 +337,9 @@ void kernel_main(void *image_handle, void *system_table) {
 
     palloc_initialize();
     palloc_self_test();
+
+    heap_initialize();
+    heap_self_test();
 
     {
         uintptr_t kernel_rsp0 = palloc_alloc();

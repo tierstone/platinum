@@ -186,7 +186,11 @@ def build(user_init_mode: str, user_program: str) -> None:
     c_sources, asm_sources = source_files()
     c_sources = [
         source for source in c_sources
-        if source.parts[-2:] != ("user", "pulse.c")
+        if not (
+            len(source.parts) >= 2 and
+            source.parts[-2] == "user" and
+            source.name != "init.c"
+        )
     ]
     extra_cflags = user_init_flags(user_init_mode)
     user_elf = build_user_program(user_program, extra_cflags)

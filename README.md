@@ -121,6 +121,7 @@ Current status: timer-driven preemptive kernel threads and basic `int 0x80` sysc
 * [x] UEFI memory map parsing
 * [x] Paging (4KB pages, initial identity map)
 * [x] Physical page allocator (reusable free-list)
+* [x] Small kernel heap
 * [x] Timer interrupt (PIT via QEMU)
 * [x] Minimal preemptive scheduler
 * [x] Kernel thread context switching
@@ -138,7 +139,7 @@ Focus: turn proof-stage userspace execution into a real kernel/userspace boundar
 * [ ] Static ELF loader for normal static binaries
 * [ ] User address-space refinement
 * [ ] Virtual memory refinement
-* [ ] Kernel heap
+* [x] Kernel heap
 * [ ] Buddy allocator
 * [ ] Slab allocator
 
