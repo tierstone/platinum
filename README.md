@@ -112,7 +112,7 @@ This is a practical split, not a religion.
 
 Focus: reach stable scheduled usermode execution.
 
-Current status: timer-driven preemptive kernel threads and small `int 0x80` syscall ABI work under QEMU. Current syscall set includes `putc`, `yield`, `get_ticks`, `exit`, plus minimal fd-backed `read`, `write`, `close`, `dup`, and `open`, with consistent `0` / value / `-1` return behavior. Small kernel heap is live and exercised during bring-up. Small VFS skeleton is live, with explicit vnode-style nodes, open-file objects, and tiny in-memory namespace tree support. `open` now walks absolute path components through a fixed tree rooted at `/`, with entries such as `/dev/console` and `/etc/banner`. Disabled-by-default first user task path exists and works through direct in-kernel C bootstrap. Proof-stage embedded static ELF64 path also works end-to-end for multiple embedded test user programs, handles normal `PT_LOAD` segment loading by ELF virtual address layout, and is still not a general file-backed program loading system. Python tooling now uses `manage.py` as unified entry point, and verification covers worker, direct user, embedded ELF, stress, fd, namespace-open, and negative-path runtime cases.
+Current status: timer-driven preemptive kernel threads and small `int 0x80` syscall ABI work under QEMU. Current syscall set includes `putc`, `yield`, `get_ticks`, `exit`, plus minimal fd-backed `read`, `write`, `close`, `dup`, `open`, and `exec`, with consistent `0` / value / `-1` return behavior. Small kernel heap is live and exercised during bring-up. Small VFS skeleton is live, with explicit vnode-style nodes, open-file objects, and tiny in-memory namespace tree support. `open` now walks absolute path components through a fixed tree rooted at `/`, with entries such as `/dev/console`, `/etc/banner`, and `/bin/pulse`, and enforces small access-mode and node-type checks. Tiny namespace-backed executable launch is also real now: one embedded ELF image can be reached through `/bin/pulse` and loaded through kernel interfaces instead of only first-task bootstrap wiring. Disabled-by-default first user task path still works through direct in-kernel C bootstrap. Proof-stage embedded static ELF64 path also works end-to-end for multiple embedded test user programs, handles normal `PT_LOAD` segment loading by ELF virtual address layout, and is still not a general file-backed program loading system. Python tooling now uses `manage.py` as unified entry point, and verification covers worker, direct user, embedded ELF, stress, fd, namespace-open, namespace-exec, and negative-path runtime cases.
 
 * [x] UEFI entry (x86_64 COFF entry point, `boot.S`)
 * [x] Early serial output (UART `0x3F8`, `serial.c`)
@@ -132,7 +132,7 @@ Current status: timer-driven preemptive kernel threads and small `int 0x80` sysc
 * [x] Kernel thread context switching
 * [x] Syscall entry via `int 0x80`
 * [x] Shared syscall number definitions
-* [x] Minimal fd syscalls (`read`, `write`, `close`, `dup`, `open`)
+* [x] Minimal fd syscalls (`read`, `write`, `close`, `dup`, `open`, `exec`)
 * [x] First scheduled user task bootstrap
 * [x] Ring3 syscall return + task done state
 * [x] Persistent first user C task loop
@@ -153,8 +153,9 @@ Focus: turn proof-stage userspace execution into a real kernel/userspace boundar
 Focus: provide the basic kernel abstractions userspace will need.
 
 * [ ] Syscall interface cleanup and expansion
-* [ ] File descriptor growth beyond console-backed stdio and `read` / `write` / `close` / `dup`
+* [ ] File descriptor growth beyond console-backed stdio and current read/write/open/exec semantics
 * [ ] VFS namespace growth beyond tiny in-memory absolute-path tree
+* [ ] Executable loading beyond single embedded namespace-backed ELF image
 * [ ] Basic VFS namespace objects
 
 ### Phase 4: Storage

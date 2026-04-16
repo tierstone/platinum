@@ -287,9 +287,9 @@ int fd_table_seed_console(struct fd_table *table)
     vfs_node_initialize(input_node, VFS_NODE_CONSOLE, &console_input_ops, input_data);
     vfs_node_initialize(output_node, VFS_NODE_CONSOLE, &console_output_ops, output_data);
 
-    input_file = vfs_file_open(input_node);
-    stdout_file = vfs_file_open(output_node);
-    stderr_file = vfs_file_open(output_node);
+    input_file = vfs_file_open(input_node, VFS_ACCESS_READ);
+    stdout_file = vfs_file_open(output_node, VFS_ACCESS_WRITE);
+    stderr_file = vfs_file_open(output_node, VFS_ACCESS_WRITE);
     if (input_file == 0 || stdout_file == 0 || stderr_file == 0) {
         vfs_file_close(input_file);
         vfs_file_close(stdout_file);
@@ -347,7 +347,7 @@ static struct vfs_file *fd_make_placeholder_file(uint32_t *released)
 
     placeholder->released = released;
     vfs_node_initialize(node, VFS_NODE_PLACEHOLDER, &placeholder_ops, placeholder);
-    return vfs_file_open(node);
+    return vfs_file_open(node, VFS_ACCESS_WRITE);
 }
 
 void fd_self_test(void)

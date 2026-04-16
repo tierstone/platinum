@@ -12,11 +12,17 @@ enum {
     SYS_WRITE = 5,
     SYS_CLOSE = 6,
     SYS_DUP = 7,
-    SYS_OPEN = 8
+    SYS_OPEN = 8,
+    SYS_EXEC = 9
 };
 
 enum {
     SYS_RESULT_OK = 0
+};
+
+enum {
+    SYS_OPEN_READ = 1u,
+    SYS_OPEN_WRITE = 2u
 };
 
 #define SYS_RESULT_ERROR ((uint64_t)-1)

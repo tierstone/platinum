@@ -195,6 +195,20 @@ def user_init_flags(mode: str) -> list[str]:
             "-DUSER_TEST_OPEN=1",
         ]
 
+    if mode == "open-flags":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_OPEN_FLAGS=1",
+        ]
+
+    if mode == "exec-elf":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_EXEC=1",
+        ]
+
     raise ValueError(f"unknown user init mode: {mode}")
 
 
@@ -228,7 +242,7 @@ def build_main(argv: list[str] | None = None) -> None:
     parser.add_argument("target", choices=["all", "efi", "clean"])
     parser.add_argument(
         "--user-init",
-        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write", "fd-read", "open-read"],
+        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf"],
         default="off",
         help="select first scheduled user task path for test builds",
     )

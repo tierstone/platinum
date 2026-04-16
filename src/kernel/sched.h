@@ -26,6 +26,7 @@ struct user_task_bootstrap {
 };
 
 struct fd_table *sched_current_fd_table(void);
+uintptr_t sched_exec_current(const struct user_task_bootstrap *bootstrap);
 void sched_enable_user_task(const struct user_task_bootstrap *bootstrap);
 void sched_initialize(void);
 uintptr_t sched_exit_current(uintptr_t current_rsp);

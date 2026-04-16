@@ -438,3 +438,36 @@ struct fd_table *sched_current_fd_table(void)
 
     return &current->fd_table;
 }
+
+uintptr_t sched_exec_current(const struct user_task_bootstrap *bootstrap)
+{
+    uintptr_t rsp;
+
+    if (!sched_started || current == 0 || current->kind != TASK_USER || current->state != TASK_RUNNING) {
+        return 0u;
+    }
+
+    if (bootstrap->address_space == 0u ||
+        bootstrap->trampoline_entry == 0 ||
+        bootstrap->user_entry == 0 ||
+        bootstrap->user_stack_page == 0u ||
+        bootstrap->user_stack_top == 0u) {
+        return 0u;
+    }
+
+    rsp = task_build_user_stack(bootstrap);
+    if (rsp == 0u) {
+        return 0u;
+    }
+
+    fd_table_close_all(&current->fd_table);
+    fd_table_initialize(&current->fd_table);
+    if (!fd_table_seed_console(&current->fd_table)) {
+        return 0u;
+    }
+
+    current->rsp = rsp;
+    current->cr3 = bootstrap->address_space;
+    paging_activate(current->cr3);
+    return current->rsp;
+}

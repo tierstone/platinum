@@ -318,6 +318,44 @@ static int syscall_copy_path(char *dst, size_t dst_size, const char *src)
     return 0;
 }
 
+static int syscall_prepare_exec_bootstrap(
+    const uint8_t *image,
+    size_t image_size,
+    struct user_task_bootstrap *bootstrap
+)
+{
+    struct loaded_user_image loaded_image;
+    uintptr_t address_space;
+    uintptr_t trampoline_page;
+    uintptr_t trampoline_entry;
+
+    bootstrap->layout = first_user_layout;
+    address_space = paging_create_user_address_space();
+    if (address_space == 0u || !paging_address_space_valid(address_space)) {
+        return 0;
+    }
+
+    if (!elf_load_user_image(image, image_size, &bootstrap->layout, address_space, &loaded_image)) {
+        return 0;
+    }
+
+    trampoline_page = (uintptr_t)(void *)arch_user_program_entry & ~(uintptr_t)4095u;
+    paging_map_user_page(address_space, bootstrap->layout.trampoline_base, trampoline_page);
+    if (!paging_mapping_matches(address_space, bootstrap->layout.trampoline_base, trampoline_page, 1)) {
+        return 0;
+    }
+
+    trampoline_entry = bootstrap->layout.trampoline_base +
+        ((uintptr_t)(void *)arch_user_program_entry & (uintptr_t)4095u);
+
+    bootstrap->address_space = address_space;
+    bootstrap->trampoline_entry = (void (*)(void))trampoline_entry;
+    bootstrap->user_entry = loaded_image.entry;
+    bootstrap->user_stack_page = loaded_image.stack_page;
+    bootstrap->user_stack_top = loaded_image.stack_top;
+    return 1;
+}
+
 uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
     struct syscall_frame *frame = (struct syscall_frame *)(void *)current_rsp;
     struct fd_table *fd_table;
@@ -401,7 +439,7 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
             return current_rsp;
         }
 
-        file = vfs_open_path(path);
+        file = vfs_open_path(path, (uint32_t)frame->rsi);
         if (file == 0) {
             syscall_return(frame, SYS_RESULT_ERROR);
             return current_rsp;
@@ -417,6 +455,44 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
 
         syscall_return(frame, (uint64_t)(int64_t)fd);
         return current_rsp;
+    }
+    case SYS_EXEC: {
+        char path[64];
+        struct vfs_file *file;
+        const uint8_t *image;
+        size_t image_size;
+        struct user_task_bootstrap bootstrap;
+        uintptr_t next_rsp;
+
+        if (!syscall_copy_path(path, sizeof(path), (const char *)(uintptr_t)frame->rdi)) {
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
+
+        file = vfs_open_exec_path(path);
+        if (file == 0) {
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
+
+        if (vfs_file_executable_image(file, &image, &image_size) != 0 || image == 0 || image_size == 0u) {
+            (void)vfs_file_close(file);
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
+
+        if (vfs_file_close(file) != 0 || !syscall_prepare_exec_bootstrap(image, image_size, &bootstrap)) {
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
+
+        next_rsp = sched_exec_current(&bootstrap);
+        if (next_rsp == 0u) {
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
+
+        return next_rsp;
     }
     default:
         syscall_return(frame, SYS_RESULT_ERROR);

@@ -22,20 +22,35 @@ struct vfs_static_text_data {
     size_t length;
 };
 
+struct vfs_executable_data {
+    const uint8_t *image;
+    size_t size;
+};
+
 struct vfs_namespace_entry {
     const char *name;
     struct vfs_node *node;
     const struct vfs_namespace_entry *children;
 };
 
+extern const uint8_t embedded_user_program_elf[];
+extern const size_t embedded_user_program_elf_size;
+
 static struct vfs_console_input_data namespace_console_input_data;
+static struct vfs_node namespace_root_node;
+static struct vfs_node namespace_dev_node;
+static struct vfs_node namespace_etc_node;
+static struct vfs_node namespace_bin_node;
 static struct vfs_node namespace_console_input_node;
 static struct vfs_node namespace_console_output_node;
 static struct vfs_static_text_data namespace_banner_data;
 static struct vfs_node namespace_banner_node;
+static struct vfs_executable_data namespace_pulse_data;
+static struct vfs_node namespace_pulse_node;
 static const struct vfs_namespace_entry namespace_dev_entries[2];
 static const struct vfs_namespace_entry namespace_etc_entries[2];
-static const struct vfs_namespace_entry namespace_root_entries[3];
+static const struct vfs_namespace_entry namespace_bin_entries[2];
+static const struct vfs_namespace_entry namespace_root_entries[4];
 static int namespace_ready;
 
 static size_t string_length(const char *text)
@@ -99,13 +114,16 @@ void vfs_node_initialize(
     node->data = data;
 }
 
-struct vfs_file *vfs_file_open(struct vfs_node *node)
+static int vfs_open_flags_valid(uint32_t access)
+{
+    return access == VFS_ACCESS_READ ||
+        access == VFS_ACCESS_WRITE ||
+        access == (VFS_ACCESS_READ | VFS_ACCESS_WRITE);
+}
+
+static struct vfs_file *vfs_make_file(struct vfs_node *node, uint32_t access)
 {
     struct vfs_file *file;
-
-    if (node == 0 || node->ops == 0) {
-        return 0;
-    }
 
     file = (struct vfs_file *)kzalloc(sizeof(*file));
     if (file == 0) {
@@ -115,8 +133,26 @@ struct vfs_file *vfs_file_open(struct vfs_node *node)
     file->refs = 1u;
     file->node = node;
     file->offset = 0u;
+    file->access = access;
     ++node->refs;
     return file;
+}
+
+struct vfs_file *vfs_file_open(struct vfs_node *node, uint32_t access)
+{
+    if (node == 0 || node->ops == 0 || node->kind == VFS_NODE_DIRECTORY || !vfs_open_flags_valid(access)) {
+        return 0;
+    }
+
+    if ((access & VFS_ACCESS_READ) != 0u && node->ops->read == 0) {
+        return 0;
+    }
+
+    if ((access & VFS_ACCESS_WRITE) != 0u && node->ops->write == 0) {
+        return 0;
+    }
+
+    return vfs_make_file(node, access);
 }
 
 int vfs_file_retain(struct vfs_file *file)
@@ -165,6 +201,9 @@ int vfs_file_read(struct vfs_file *file, void *buffer, size_t count)
     if (file == 0 || file->node == 0 || file->node->ops == 0 || file->node->ops->read == 0) {
         return -1;
     }
+    if ((file->access & VFS_ACCESS_READ) == 0u) {
+        return -1;
+    }
 
     return file->node->ops->read(file, buffer, count);
 }
@@ -174,8 +213,29 @@ int vfs_file_write(struct vfs_file *file, const void *buffer, size_t count)
     if (file == 0 || file->node == 0 || file->node->ops == 0 || file->node->ops->write == 0) {
         return -1;
     }
+    if ((file->access & VFS_ACCESS_WRITE) == 0u) {
+        return -1;
+    }
 
     return file->node->ops->write(file, buffer, count);
+}
+
+int vfs_file_executable_image(struct vfs_file *file, const uint8_t **image, size_t *size)
+{
+    const struct vfs_executable_data *data;
+
+    if (file == 0 || file->node == 0 || file->node->kind != VFS_NODE_EXECUTABLE || image == 0 || size == 0) {
+        return -1;
+    }
+
+    data = (const struct vfs_executable_data *)file->node->data;
+    if (data == 0 || data->image == 0 || data->size == 0u) {
+        return -1;
+    }
+
+    *image = data->image;
+    *size = data->size;
+    return 0;
 }
 
 static int vfs_static_release(struct vfs_node *node)
@@ -333,9 +393,15 @@ static const struct vfs_namespace_entry namespace_etc_entries[2] = {
     { 0, 0, 0 }
 };
 
-static const struct vfs_namespace_entry namespace_root_entries[3] = {
-    { "dev", 0, namespace_dev_entries },
-    { "etc", 0, namespace_etc_entries },
+static const struct vfs_namespace_entry namespace_bin_entries[2] = {
+    { "pulse", &namespace_pulse_node, 0 },
+    { 0, 0, 0 }
+};
+
+static const struct vfs_namespace_entry namespace_root_entries[4] = {
+    { "dev", &namespace_dev_node, namespace_dev_entries },
+    { "etc", &namespace_etc_node, namespace_etc_entries },
+    { "bin", &namespace_bin_node, namespace_bin_entries },
     { 0, 0, 0 }
 };
 
@@ -356,19 +422,36 @@ void vfs_namespace_initialize(void)
         vfs_static_text_read,
         0
     };
+    static const struct vfs_node_ops executable_ops = {
+        vfs_static_release,
+        0,
+        0
+    };
+    static const struct vfs_node_ops directory_ops = {
+        vfs_static_release,
+        0,
+        0
+    };
 
     namespace_console_input_data.byte = '@';
     namespace_console_input_data.used = 0u;
     namespace_banner_data.text = "platinum\n";
     namespace_banner_data.length = 9u;
+    namespace_pulse_data.image = embedded_user_program_elf;
+    namespace_pulse_data.size = embedded_user_program_elf_size;
 
+    vfs_node_initialize(&namespace_root_node, VFS_NODE_DIRECTORY, &directory_ops, 0);
+    vfs_node_initialize(&namespace_dev_node, VFS_NODE_DIRECTORY, &directory_ops, 0);
+    vfs_node_initialize(&namespace_etc_node, VFS_NODE_DIRECTORY, &directory_ops, 0);
+    vfs_node_initialize(&namespace_bin_node, VFS_NODE_DIRECTORY, &directory_ops, 0);
     vfs_node_initialize(&namespace_console_input_node, VFS_NODE_CONSOLE, &console_input_ops, &namespace_console_input_data);
     vfs_node_initialize(&namespace_console_output_node, VFS_NODE_CONSOLE, &console_output_ops, 0);
     vfs_node_initialize(&namespace_banner_node, VFS_NODE_STATIC_TEXT, &static_text_ops, &namespace_banner_data);
+    vfs_node_initialize(&namespace_pulse_node, VFS_NODE_EXECUTABLE, &executable_ops, &namespace_pulse_data);
     namespace_ready = 1;
 }
 
-struct vfs_file *vfs_open_path(const char *path)
+struct vfs_file *vfs_open_path(const char *path, uint32_t flags)
 {
     struct vfs_node *node;
 
@@ -377,7 +460,19 @@ struct vfs_file *vfs_open_path(const char *path)
         return 0;
     }
 
-    return vfs_file_open(node);
+    return vfs_file_open(node, flags);
+}
+
+struct vfs_file *vfs_open_exec_path(const char *path)
+{
+    struct vfs_node *node;
+
+    node = vfs_walk_path(path);
+    if (node == 0 || node->kind != VFS_NODE_EXECUTABLE) {
+        return 0;
+    }
+
+    return vfs_make_file(node, 0u);
 }
 
 static int vfs_self_test_release(struct vfs_node *node)
@@ -443,7 +538,7 @@ void vfs_self_test(void)
     data->used = 0u;
     vfs_node_initialize(node, VFS_NODE_PLACEHOLDER, &ops, data);
 
-    file = vfs_file_open(node);
+    file = vfs_file_open(node, VFS_ACCESS_READ | VFS_ACCESS_WRITE);
     if (file == 0) {
         write_line("vfs fail");
         return;
@@ -465,7 +560,7 @@ void vfs_self_test(void)
         return;
     }
 
-    file = vfs_open_path("/etc/banner");
+    file = vfs_open_path("/etc/banner", VFS_ACCESS_READ);
     if (file == 0) {
         write_line("vfs fail");
         return;
@@ -477,7 +572,7 @@ void vfs_self_test(void)
         return;
     }
 
-    file = vfs_open_path("/dev/console");
+    file = vfs_open_path("/dev/console", VFS_ACCESS_WRITE);
     if (file == 0) {
         write_line("vfs fail");
         return;
@@ -488,7 +583,28 @@ void vfs_self_test(void)
         return;
     }
 
-    if (vfs_open_path("/dev") != 0 || vfs_open_path("etc/banner") != 0 || vfs_open_path("/etc/missing") != 0) {
+    file = vfs_open_exec_path("/bin/pulse");
+    if (file == 0) {
+        write_line("vfs fail");
+        return;
+    }
+
+    {
+        const uint8_t *image;
+        size_t size;
+
+        if (vfs_file_executable_image(file, &image, &size) != 0 || image == 0 || size == 0u || vfs_file_close(file) != 0) {
+            write_line("vfs fail");
+            return;
+        }
+    }
+
+    if (vfs_open_path("/dev", VFS_ACCESS_READ) != 0 ||
+        vfs_open_path("etc/banner", VFS_ACCESS_READ) != 0 ||
+        vfs_open_path("/etc/missing", VFS_ACCESS_READ) != 0 ||
+        vfs_open_path("/etc/banner", VFS_ACCESS_WRITE) != 0 ||
+        vfs_open_path("/dev/console", VFS_ACCESS_READ) != 0 ||
+        vfs_open_exec_path("/etc/banner") != 0) {
         write_line("vfs fail");
         return;
     }
