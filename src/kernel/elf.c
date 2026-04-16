@@ -121,16 +121,33 @@ static int validate_header(const struct elf64_header *header, size_t image_size)
     return range_fits(image_size, header->phoff, (uint64_t)header->phnum * (uint64_t)header->phentsize);
 }
 
-static int validate_program_headers(const struct elf64_program_header *phdrs, uint16_t phnum)
+static int validate_load_segment(size_t image_size, const struct elf64_program_header *phdr)
 {
-    uint16_t index;
+    uint64_t segment_end;
 
-    if (phnum == 0u) {
+    if (phdr->type != elf_phdr_type_load) {
+        return 1;
+    }
+
+    if (phdr->memsz == 0u || phdr->filesz > phdr->memsz) {
         return 0;
     }
 
-    for (index = 0u; index < phnum; ++index) {
-        if (phdrs[index].type != elf_phdr_type_load) {
+    if (!range_fits(image_size, phdr->offset, phdr->filesz)) {
+        return 0;
+    }
+
+    segment_end = phdr->vaddr + phdr->memsz;
+    if (segment_end < phdr->vaddr) {
+        return 0;
+    }
+
+    if (phdr->align > 1u) {
+        if ((phdr->align & (phdr->align - 1u)) != 0u) {
+            return 0;
+        }
+
+        if ((phdr->vaddr & (phdr->align - 1u)) != (phdr->offset & (phdr->align - 1u))) {
             return 0;
         }
     }
@@ -138,7 +155,40 @@ static int validate_program_headers(const struct elf64_program_header *phdrs, ui
     return 1;
 }
 
-static int compute_load_span(const struct elf64_program_header *phdrs, uint16_t phnum, uintptr_t *span_begin, uintptr_t *span_end)
+static int validate_program_headers(
+    const struct elf64_program_header *phdrs,
+    uint16_t phnum,
+    size_t image_size
+)
+{
+    uint16_t index;
+    int load_count;
+
+    if (phnum == 0u) {
+        return 0;
+    }
+
+    load_count = 0;
+
+    for (index = 0u; index < phnum; ++index) {
+        if (!validate_load_segment(image_size, &phdrs[index])) {
+            return 0;
+        }
+
+        if (phdrs[index].type == elf_phdr_type_load) {
+            ++load_count;
+        }
+    }
+
+    return load_count != 0;
+}
+
+static int compute_load_span(
+    const struct elf64_program_header *phdrs,
+    uint16_t phnum,
+    uintptr_t *span_begin,
+    uintptr_t *span_end
+)
 {
     uint16_t index;
     uint64_t lowest;
@@ -157,15 +207,8 @@ static int compute_load_span(const struct elf64_program_header *phdrs, uint16_t 
             continue;
         }
 
-        if (phdrs[index].memsz == 0u) {
-            return 0;
-        }
-
         begin = phdrs[index].vaddr;
         end = phdrs[index].vaddr + phdrs[index].memsz;
-        if (end < begin) {
-            return 0;
-        }
 
         if (!found || begin < lowest) {
             lowest = begin;
@@ -185,6 +228,33 @@ static int compute_load_span(const struct elf64_program_header *phdrs, uint16_t 
     *span_begin = align_down((uintptr_t)lowest);
     *span_end = align_up((uintptr_t)highest);
     return *span_end > *span_begin;
+}
+
+static int entry_in_load_segment(
+    const struct elf64_program_header *phdrs,
+    uint16_t phnum,
+    uintptr_t entry
+)
+{
+    uint16_t index;
+
+    for (index = 0u; index < phnum; ++index) {
+        uint64_t segment_begin;
+        uint64_t segment_end;
+
+        if (phdrs[index].type != elf_phdr_type_load) {
+            continue;
+        }
+
+        segment_begin = phdrs[index].vaddr;
+        segment_end = phdrs[index].vaddr + phdrs[index].memsz;
+
+        if ((uint64_t)entry >= segment_begin && (uint64_t)entry < segment_end) {
+            return 1;
+        }
+    }
+
+    return 0;
 }
 
 static int claim_window_pages(uintptr_t load_begin, uintptr_t load_end)
@@ -209,26 +279,27 @@ static void clear_window(uintptr_t load_begin, uintptr_t load_end)
     }
 }
 
-static int load_segment(const uint8_t *image, size_t image_size, const struct elf64_program_header *phdr, uintptr_t source_base, uintptr_t load_begin)
+static int load_segment(
+    const uint8_t *image,
+    const struct elf64_program_header *phdr,
+    uintptr_t image_vaddr_begin,
+    uintptr_t load_begin
+)
 {
     uintptr_t dst_begin;
     uint8_t *dst;
 
-    if (phdr->memsz < phdr->filesz) {
+    if (phdr->type != elf_phdr_type_load) {
+        return 1;
+    }
+
+    if (phdr->vaddr < image_vaddr_begin) {
         return 0;
     }
 
-    if (!range_fits(image_size, phdr->offset, phdr->filesz)) {
-        return 0;
-    }
-
-    if (phdr->vaddr < source_base) {
-        return 0;
-    }
-
-    dst_begin = load_begin + (uintptr_t)(phdr->vaddr - source_base);
+    dst_begin = load_begin + (uintptr_t)(phdr->vaddr - image_vaddr_begin);
     dst = (uint8_t *)(void *)dst_begin;
-    memory_copy(dst, &image[(size_t)phdr->offset], (size_t)phdr->filesz);
+    memory_copy(dst, image + phdr->offset, (size_t)phdr->filesz);
     memory_zero(dst + phdr->filesz, (size_t)(phdr->memsz - phdr->filesz));
     return 1;
 }
@@ -243,8 +314,10 @@ int elf_load_user_image(
 {
     const struct elf64_header *header;
     const struct elf64_program_header *phdrs;
-    uintptr_t source_begin;
-    uintptr_t source_end;
+    uintptr_t image_vaddr_begin;
+    uintptr_t image_vaddr_end;
+    uintptr_t image_size_aligned;
+    uintptr_t user_image_end;
     uintptr_t load_begin;
     uintptr_t load_end;
     uintptr_t user_stack_page;
@@ -256,31 +329,38 @@ int elf_load_user_image(
     }
 
     phdrs = (const struct elf64_program_header *)(const void *)(image + header->phoff);
-    if (!validate_program_headers(phdrs, header->phnum)) {
+    if (!validate_program_headers(phdrs, header->phnum, image_size)) {
         return 0;
     }
 
-    if (!compute_load_span(phdrs, header->phnum, &source_begin, &source_end)) {
+    if (!compute_load_span(phdrs, header->phnum, &image_vaddr_begin, &image_vaddr_end)) {
         return 0;
     }
 
-    if (header->entry < source_begin || header->entry >= source_end) {
+    if (!entry_in_load_segment(phdrs, header->phnum, (uintptr_t)header->entry)) {
         return 0;
     }
 
-    if ((source_end - source_begin) > (uintptr_t)elf_user_load_size) {
+    if (layout->image_base == 0u || layout->stack_top == 0u || layout->stack_top <= 4096u) {
         return 0;
     }
 
-    if (layout->image_base == 0u || layout->stack_top == 0u) {
+    if (address_space == 0u || loaded_image == 0) {
         return 0;
     }
-    if (address_space == 0u) {
+
+    image_size_aligned = image_vaddr_end - image_vaddr_begin;
+    if (image_size_aligned > (uintptr_t)elf_user_load_size) {
+        return 0;
+    }
+
+    user_image_end = layout->image_base + image_size_aligned;
+    if (user_image_end < layout->image_base || user_image_end > layout->stack_top - 4096u) {
         return 0;
     }
 
     load_begin = (uintptr_t)elf_user_load_base;
-    load_end = load_begin + (source_end - source_begin);
+    load_end = load_begin + image_size_aligned;
 
     if (!claim_window_pages(load_begin, load_end)) {
         return 0;
@@ -289,7 +369,7 @@ int elf_load_user_image(
     clear_window(load_begin, load_end);
 
     for (index = 0u; index < header->phnum; ++index) {
-        if (!load_segment(image, image_size, &phdrs[index], source_begin, load_begin)) {
+        if (!load_segment(image, &phdrs[index], image_vaddr_begin, load_begin)) {
             return 0;
         }
     }
@@ -317,10 +397,10 @@ int elf_load_user_image(
     }
 
     loaded_image->load_begin = layout->image_base;
-    loaded_image->load_end = layout->image_base + (load_end - load_begin);
+    loaded_image->load_end = user_image_end;
     loaded_image->load_physical_begin = load_begin;
     loaded_image->load_physical_end = load_end;
-    loaded_image->entry = (void (*)(void))(layout->image_base + (uintptr_t)(header->entry - source_begin));
+    loaded_image->entry = (void (*)(void))(layout->image_base + (uintptr_t)(header->entry - image_vaddr_begin));
     loaded_image->stack_page = user_stack_page;
     loaded_image->stack_top = layout->stack_top;
     return 1;

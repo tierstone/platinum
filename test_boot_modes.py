@@ -9,30 +9,42 @@ import sys
 
 MODE_RULES = {
     "off": {
+        "build_args": (),
         "required": ("sched ok", "worker"),
         "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
     },
     "c": {
+        "build_args": (),
         "required": ("sched ok", "user init", "U"),
         "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
     },
     "elf": {
+        "build_args": (),
         "required": ("sched ok", "user init", "U"),
         "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
     },
+    "elf-pulse": {
+        "build_args": ("--user-program", "pulse"),
+        "required": ("sched ok", "user init", "P"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
+    },
     "bad-syscall": {
+        "build_args": (),
         "required": ("sched ok", "user init", "V", "ring3 exit"),
         "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
     },
     "bad-elf": {
+        "build_args": (),
         "required": ("user elf fail",),
         "forbidden": ("trap ", "exit fail", "user as fail", "tss stack fail"),
     },
     "yield-stress": {
+        "build_args": (),
         "required": ("sched ok", "user init", "Y"),
         "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
     },
     "bad-bootstrap": {
+        "build_args": (),
         "required": ("sched bootstrap fail",),
         "forbidden": ("trap ", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
     },
@@ -86,9 +98,14 @@ def run_mode(mode: str, timeout_seconds: float, iteration: int) -> None:
     log_dir = Path("build") / "test-logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"{mode}-iteration-{iteration}.log"
+    if log_path.exists():
+        log_path.unlink()
+
+    build_command = ["python3", "build.py", "all", "--user-init", "elf" if mode == "elf-pulse" else mode]
+    build_command.extend(MODE_RULES[mode]["build_args"])
 
     build_code, build_output = run_command(
-        ["python3", "build.py", "all", "--user-init", mode],
+        build_command,
         timeout_seconds,
     )
     if build_code != 0:
@@ -98,7 +115,7 @@ def run_mode(mode: str, timeout_seconds: float, iteration: int) -> None:
 
     boot_code, boot_output = run_command(
         ["timeout", f"{timeout_seconds}s", "python3", "boot.py", "--serial-log", str(log_path)],
-        timeout_seconds,
+        timeout_seconds + 1.0,
     )
     if boot_code not in (0, 124):
         raise RuntimeError(
@@ -137,7 +154,7 @@ def main() -> int:
         return 1
 
     if args.mode == "all":
-        modes = ("off", "c", "elf", "yield-stress", "bad-syscall", "bad-elf", "bad-bootstrap")
+        modes = ("off", "c", "elf", "elf-pulse", "yield-stress", "bad-syscall", "bad-elf", "bad-bootstrap")
     else:
         modes = (args.mode,)
 

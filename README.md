@@ -54,7 +54,7 @@ python3 test_boot_modes.py --mode elf --loops 25 --timeout 5
 
 # Stress the yield-heavy user path
 python3 test_boot_modes.py --mode yield-stress --loops 25 --timeout 5
-````
+```
 
 Optional test builds:
 
@@ -67,9 +67,12 @@ python3 build.py all --user-init c
 
 # Embedded static ELF user task bootstrap
 python3 build.py all --user-init elf
+
+# Same ELF path, second embedded user program source
+python3 build.py all --user-init elf --user-program pulse
 ```
 
-The default remains `--user-init off`. The direct C user task path is the simpler proof path. The embedded ELF path is build-selectable and proven end-to-end for one embedded static ELF64 ET_EXEC test program, but it's still a proof-stage loader, not a general userspace loading system.
+The default remains `--user-init off`. The direct C user task path is simpler proof path. Embedded ELF path is build-selectable and proven end-to-end for embedded static ELF64 ET_EXEC test programs. Loader now handles normal `PT_LOAD` segment loading for static x86_64 ELF64 inputs, and build tooling can choose between multiple embedded user ELF sources, but whole path is still proof-stage and not general userspace loading system.
 
 ## Language Plan
 
@@ -106,7 +109,7 @@ This is a practical split, not a religion.
 
 Focus: reach stable scheduled usermode execution.
 
-Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`, `exit`) work under QEMU. A disabled-by-default first user task path exists and works through the direct in-kernel C bootstrap. A proof-stage embedded static ELF64 path also works end-to-end for one test user program, but that path is still scaffolding rather than a finished program loader.
+Current status: timer-driven preemptive kernel threads and basic `int 0x80` syscalls (`putc`, `yield`, `get_ticks`, `exit`) work under QEMU. Disabled-by-default first user task path exists and works through direct in-kernel C bootstrap. Proof-stage embedded static ELF64 path also works end-to-end for multiple embedded test user programs and now loads normal `PT_LOAD` segments by ELF virtual address layout, but path is still not finished general program loader.
 
 * [x] UEFI entry (x86_64 COFF entry point, `boot.S`)
 * [x] Early serial output (UART `0x3F8`, `serial.c`)

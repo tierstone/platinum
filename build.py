@@ -23,6 +23,12 @@ from tools import (
 )
 
 
+USER_PROGRAM_SOURCES = {
+    "init": Path("src/user/init.c"),
+    "pulse": Path("src/user/pulse.c"),
+}
+
+
 def compile_sources(sources: list[Path], flags: list[str], extra_flags: list[str]) -> list[Path]:
     objects: list[Path] = []
 
@@ -38,9 +44,9 @@ def compile_sources(sources: list[Path], flags: list[str], extra_flags: list[str
     return objects
 
 
-def build_user_program(extra_flags: list[str]) -> Path:
-    user_source = Path("src/user/init.c")
-    user_object = USER_BUILD_DIR / "init.o"
+def build_user_program(user_program: str, extra_flags: list[str]) -> Path:
+    user_source = USER_PROGRAM_SOURCES[user_program]
+    user_object = USER_BUILD_DIR / (user_source.stem + ".o")
     user_linker_script = Path("src/user/link.ld")
 
     ensure_dir(USER_BUILD_DIR)
@@ -176,10 +182,14 @@ def user_init_flags(mode: str) -> list[str]:
     raise ValueError(f"unknown user init mode: {mode}")
 
 
-def build(user_init_mode: str) -> None:
+def build(user_init_mode: str, user_program: str) -> None:
     c_sources, asm_sources = source_files()
+    c_sources = [
+        source for source in c_sources
+        if source.parts[-2:] != ("user", "pulse.c")
+    ]
     extra_cflags = user_init_flags(user_init_mode)
-    user_elf = build_user_program(extra_cflags)
+    user_elf = build_user_program(user_program, extra_cflags)
     generated_blob = generate_user_blob_source(user_elf)
 
     ensure_dir(BUILD_DIR)
@@ -202,13 +212,19 @@ def main() -> None:
         default="off",
         help="select first scheduled user task path for test builds",
     )
+    parser.add_argument(
+        "--user-program",
+        choices=sorted(USER_PROGRAM_SOURCES.keys()),
+        default="init",
+        help="select embedded user ELF source program",
+    )
     args = parser.parse_args()
 
     if args.target == "clean":
         clean()
         return
 
-    build(args.user_init)
+    build(args.user_init, args.user_program)
 
 
 if __name__ == "__main__":
