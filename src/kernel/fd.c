@@ -7,13 +7,17 @@
 #include <stdint.h>
 
 struct fd_console_output {
-    uint32_t refs;
+    uint32_t released;
 };
 
 struct fd_console_input {
-    uint32_t refs;
+    uint32_t released;
     char byte;
     uint32_t used;
+};
+
+struct fd_placeholder {
+    uint32_t *released;
 };
 
 static size_t string_length(const char *text)
@@ -56,16 +60,15 @@ void fd_table_initialize(struct fd_table *table)
     for (index = 0; index < fd_table_capacity; ++index) {
         table->entries[index].used = 0u;
         table->entries[index].kind = FD_KIND_NONE;
-        table->entries[index].object = 0;
-        table->entries[index].ops = 0;
+        table->entries[index].file = 0;
     }
 }
 
-int fd_table_install(struct fd_table *table, fd_kind_t kind, void *object, const struct fd_ops *ops)
+int fd_table_install(struct fd_table *table, fd_kind_t kind, struct vfs_file *file)
 {
     int index;
 
-    if (table == 0 || kind == FD_KIND_NONE) {
+    if (table == 0 || kind == FD_KIND_NONE || file == 0) {
         return -1;
     }
 
@@ -73,8 +76,7 @@ int fd_table_install(struct fd_table *table, fd_kind_t kind, void *object, const
         if (table->entries[index].used == 0u) {
             table->entries[index].used = 1u;
             table->entries[index].kind = kind;
-            table->entries[index].object = object;
-            table->entries[index].ops = ops;
+            table->entries[index].file = file;
             return index;
         }
     }
@@ -104,13 +106,11 @@ int fd_table_dup(struct fd_table *table, int fd)
         return -1;
     }
 
-    if (entry->ops != 0 && entry->ops->retain != 0) {
-        if (entry->ops->retain(entry->object) != 0) {
-            return -1;
-        }
+    if (vfs_file_retain(entry->file) != 0) {
+        return -1;
     }
 
-    return fd_table_install(table, entry->kind, entry->object, entry->ops);
+    return fd_table_install(table, entry->kind, entry->file);
 }
 
 int fd_table_read(struct fd_table *table, int fd, void *buffer, size_t count)
@@ -118,11 +118,11 @@ int fd_table_read(struct fd_table *table, int fd, void *buffer, size_t count)
     const struct fd_entry *entry;
 
     entry = fd_table_get(table, fd);
-    if (entry == 0 || entry->ops == 0 || entry->ops->read == 0) {
+    if (entry == 0) {
         return -1;
     }
 
-    return entry->ops->read(entry->object, buffer, count);
+    return vfs_file_read(entry->file, buffer, count);
 }
 
 int fd_table_write(struct fd_table *table, int fd, const void *buffer, size_t count)
@@ -130,11 +130,11 @@ int fd_table_write(struct fd_table *table, int fd, const void *buffer, size_t co
     const struct fd_entry *entry;
 
     entry = fd_table_get(table, fd);
-    if (entry == 0 || entry->ops == 0 || entry->ops->write == 0) {
+    if (entry == 0) {
         return -1;
     }
 
-    return entry->ops->write(entry->object, buffer, count);
+    return vfs_file_write(entry->file, buffer, count);
 }
 
 int fd_table_close(struct fd_table *table, int fd)
@@ -151,15 +151,10 @@ int fd_table_close(struct fd_table *table, int fd)
         return -1;
     }
 
-    result = 0;
-    if (entry->ops != 0 && entry->ops->close != 0) {
-        result = entry->ops->close(entry->object);
-    }
-
+    result = vfs_file_close(entry->file);
     entry->used = 0u;
     entry->kind = FD_KIND_NONE;
-    entry->object = 0;
-    entry->ops = 0;
+    entry->file = 0;
     return result;
 }
 
@@ -178,42 +173,23 @@ void fd_table_close_all(struct fd_table *table)
     }
 }
 
-static int fd_console_output_retain(void *object)
+static int fd_console_output_release(struct vfs_node *node)
 {
     struct fd_console_output *console;
 
-    console = (struct fd_console_output *)object;
-    if (console == 0 || console->refs == 0u) {
-        return -1;
-    }
-
-    ++console->refs;
+    console = (struct fd_console_output *)node->data;
+    console->released += 1u;
+    kfree(console);
+    kfree(node);
     return 0;
 }
 
-static int fd_console_output_close(void *object)
-{
-    struct fd_console_output *console;
-
-    console = (struct fd_console_output *)object;
-    if (console == 0 || console->refs == 0u) {
-        return -1;
-    }
-
-    --console->refs;
-    if (console->refs == 0u) {
-        kfree(console);
-    }
-
-    return 0;
-}
-
-static int fd_console_output_write(void *object, const void *buffer, size_t count)
+static int fd_console_output_write(struct vfs_file *file, const void *buffer, size_t count)
 {
     const struct fd_console_output *console;
 
-    console = (const struct fd_console_output *)object;
-    if (console == 0 || console->refs == 0u) {
+    console = (const struct fd_console_output *)file->node->data;
+    if (console == 0) {
         return -1;
     }
 
@@ -225,45 +201,27 @@ static int fd_console_output_write(void *object, const void *buffer, size_t coun
         serial_write((const char *)buffer, count);
     }
 
+    file->offset += count;
     return (int)count;
 }
 
-static int fd_console_input_retain(void *object)
+static int fd_console_input_release(struct vfs_node *node)
 {
     struct fd_console_input *console;
 
-    console = (struct fd_console_input *)object;
-    if (console == 0 || console->refs == 0u) {
-        return -1;
-    }
-
-    ++console->refs;
+    console = (struct fd_console_input *)node->data;
+    console->released += 1u;
+    kfree(console);
+    kfree(node);
     return 0;
 }
 
-static int fd_console_input_close(void *object)
+static int fd_console_input_read(struct vfs_file *file, void *buffer, size_t count)
 {
     struct fd_console_input *console;
 
-    console = (struct fd_console_input *)object;
-    if (console == 0 || console->refs == 0u) {
-        return -1;
-    }
-
-    --console->refs;
-    if (console->refs == 0u) {
-        kfree(console);
-    }
-
-    return 0;
-}
-
-static int fd_console_input_read(void *object, void *buffer, size_t count)
-{
-    struct fd_console_input *console;
-
-    console = (struct fd_console_input *)object;
-    if (console == 0 || console->refs == 0u) {
+    console = (struct fd_console_input *)file->node->data;
+    if (console == 0) {
         return -1;
     }
 
@@ -281,98 +239,145 @@ static int fd_console_input_read(void *object, void *buffer, size_t count)
 
     ((char *)buffer)[0] = console->byte;
     console->used = 1u;
+    file->offset += 1u;
     return 1;
 }
 
 int fd_table_seed_console(struct fd_table *table)
 {
-    static const struct fd_ops console_input_ops = {
-        fd_console_input_retain,
-        fd_console_input_close,
+    static const struct vfs_node_ops console_input_ops = {
+        fd_console_input_release,
         fd_console_input_read,
         0
     };
-    static const struct fd_ops console_output_ops = {
-        fd_console_output_retain,
-        fd_console_output_close,
+    static const struct vfs_node_ops console_output_ops = {
+        fd_console_output_release,
         0,
         fd_console_output_write
     };
-    struct fd_console_input *input;
-    struct fd_console_output *output;
+    struct fd_console_input *input_data;
+    struct fd_console_output *output_data;
+    struct vfs_node *input_node;
+    struct vfs_node *output_node;
+    struct vfs_file *input_file;
+    struct vfs_file *stdout_file;
+    struct vfs_file *stderr_file;
 
     if (table == 0) {
         return 0;
     }
 
-    input = (struct fd_console_input *)kzalloc(sizeof(*input));
-    output = (struct fd_console_output *)kzalloc(sizeof(*output));
-    if (input == 0 || output == 0) {
-        kfree(input);
-        kfree(output);
+    input_data = (struct fd_console_input *)kzalloc(sizeof(*input_data));
+    output_data = (struct fd_console_output *)kzalloc(sizeof(*output_data));
+    input_node = (struct vfs_node *)kzalloc(sizeof(*input_node));
+    output_node = (struct vfs_node *)kzalloc(sizeof(*output_node));
+    if (input_data == 0 || output_data == 0 || input_node == 0 || output_node == 0) {
+        kfree(input_data);
+        kfree(output_data);
+        kfree(input_node);
+        kfree(output_node);
         return 0;
     }
 
-    input->refs = 1u;
-    input->byte = '@';
-    input->used = 0u;
-    output->refs = 2u;
+    input_data->released = 0u;
+    input_data->byte = '@';
+    input_data->used = 0u;
+    output_data->released = 0u;
 
-    if (fd_table_install(table, FD_KIND_CONSOLE, input, &console_input_ops) != 0 ||
-        fd_table_install(table, FD_KIND_CONSOLE, output, &console_output_ops) != 1 ||
-        fd_table_install(table, FD_KIND_CONSOLE, output, &console_output_ops) != 2) {
-        fd_console_input_close(input);
-        fd_console_output_close(output);
-        fd_console_output_close(output);
+    vfs_node_initialize(input_node, VFS_NODE_CONSOLE, &console_input_ops, input_data);
+    vfs_node_initialize(output_node, VFS_NODE_CONSOLE, &console_output_ops, output_data);
+
+    input_file = vfs_file_open(input_node);
+    stdout_file = vfs_file_open(output_node);
+    stderr_file = vfs_file_open(output_node);
+    if (input_file == 0 || stdout_file == 0 || stderr_file == 0) {
+        vfs_file_close(input_file);
+        vfs_file_close(stdout_file);
+        vfs_file_close(stderr_file);
+        return 0;
+    }
+
+    if (fd_table_install(table, FD_KIND_CONSOLE, input_file) != 0 ||
+        fd_table_install(table, FD_KIND_CONSOLE, stdout_file) != 1 ||
+        fd_table_install(table, FD_KIND_CONSOLE, stderr_file) != 2) {
+        vfs_file_close(input_file);
+        vfs_file_close(stdout_file);
+        vfs_file_close(stderr_file);
         return 0;
     }
 
     return 1;
 }
 
-static int fd_self_test_close(void *object)
+static int fd_placeholder_release(struct vfs_node *node)
 {
-    uint32_t *close_count;
+    struct fd_placeholder *placeholder;
 
-    close_count = (uint32_t *)object;
-    *close_count += 1u;
+    placeholder = (struct fd_placeholder *)node->data;
+    *(placeholder->released) += 1u;
+    kfree(placeholder);
+    kfree(node);
     return 0;
+}
+
+static int fd_placeholder_write(struct vfs_file *file, const void *buffer, size_t count)
+{
+    (void)file;
+    (void)buffer;
+    return (int)count;
+}
+
+static struct vfs_file *fd_make_placeholder_file(uint32_t *released)
+{
+    static const struct vfs_node_ops placeholder_ops = {
+        fd_placeholder_release,
+        0,
+        fd_placeholder_write
+    };
+    struct fd_placeholder *placeholder;
+    struct vfs_node *node;
+
+    placeholder = (struct fd_placeholder *)kzalloc(sizeof(*placeholder));
+    node = (struct vfs_node *)kzalloc(sizeof(*node));
+    if (placeholder == 0 || node == 0) {
+        kfree(placeholder);
+        kfree(node);
+        return 0;
+    }
+
+    placeholder->released = released;
+    vfs_node_initialize(node, VFS_NODE_PLACEHOLDER, &placeholder_ops, placeholder);
+    return vfs_file_open(node);
 }
 
 void fd_self_test(void)
 {
-    static const struct fd_ops close_ops = { 0, fd_self_test_close, 0, 0 };
     struct fd_table table;
-    uint32_t close_count;
     int first_fd;
     int second_fd;
     int duplicate_fd;
     char ch;
-    const struct fd_entry *entry;
+    uint32_t placeholder_a_released;
+    uint32_t placeholder_b_released;
 
-    close_count = 0u;
     fd_table_initialize(&table);
 
-    first_fd = fd_table_install(&table, FD_KIND_PLACEHOLDER, &close_count, &close_ops);
-    second_fd = fd_table_install(&table, FD_KIND_PLACEHOLDER, &close_count, &close_ops);
+    placeholder_a_released = 0u;
+    placeholder_b_released = 0u;
+    first_fd = fd_table_install(&table, FD_KIND_PLACEHOLDER, fd_make_placeholder_file(&placeholder_a_released));
+    second_fd = fd_table_install(&table, FD_KIND_PLACEHOLDER, fd_make_placeholder_file(&placeholder_b_released));
     if (first_fd != 0 || second_fd != 1) {
         write_line("fd fail");
         return;
     }
 
-    entry = fd_table_get(&table, first_fd);
-    if (entry == 0 || entry->kind != FD_KIND_PLACEHOLDER) {
-        write_line("fd fail");
-        return;
-    }
-
-    if (fd_table_close(&table, first_fd) != 0 || close_count != 1u) {
+    if (fd_table_close(&table, first_fd) != 0 || placeholder_a_released != 1u) {
         write_line("fd fail");
         return;
     }
 
     fd_table_close_all(&table);
-    if (close_count != 2u || fd_table_get(&table, second_fd) != 0) {
+    if (placeholder_b_released != 1u || fd_table_get(&table, second_fd) != 0) {
         write_line("fd fail");
         return;
     }

@@ -1,5 +1,6 @@
 #include "kernel/core.h"
 #include "kernel/elf.h"
+#include "kernel/vfs.h"
 #include "kernel/fd.h"
 #include "kernel/gdt.h"
 #include "kernel/heap.h"
@@ -403,6 +404,7 @@ void kernel_main(void *image_handle, void *system_table) {
     heap_initialize();
     heap_self_test();
 
+    vfs_self_test();
     fd_self_test();
 
     {
