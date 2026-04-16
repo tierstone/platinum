@@ -23,8 +23,9 @@ struct vfs_static_text_data {
 };
 
 struct vfs_namespace_entry {
-    const char *path;
+    const char *name;
     struct vfs_node *node;
+    const struct vfs_namespace_entry *children;
 };
 
 static struct vfs_console_input_data namespace_console_input_data;
@@ -32,7 +33,9 @@ static struct vfs_node namespace_console_input_node;
 static struct vfs_node namespace_console_output_node;
 static struct vfs_static_text_data namespace_banner_data;
 static struct vfs_node namespace_banner_node;
-static struct vfs_namespace_entry namespace_entries[3];
+static const struct vfs_namespace_entry namespace_dev_entries[2];
+static const struct vfs_namespace_entry namespace_etc_entries[2];
+static const struct vfs_namespace_entry namespace_root_entries[3];
 static int namespace_ready;
 
 static size_t string_length(const char *text)
@@ -62,6 +65,21 @@ static void vfs_fail(const char *text)
 {
     write_line(text);
     arch_halt_forever();
+}
+
+static int string_equal(const char *left, const char *right)
+{
+    size_t index;
+
+    index = 0u;
+    while (left[index] != '\0' && right[index] != '\0') {
+        if (left[index] != right[index]) {
+            return 0;
+        }
+        ++index;
+    }
+
+    return left[index] == '\0' && right[index] == '\0';
 }
 
 void vfs_node_initialize(
@@ -228,6 +246,99 @@ static int vfs_static_text_read(struct vfs_file *file, void *buffer, size_t coun
     return (int)count;
 }
 
+static const struct vfs_namespace_entry *vfs_find_child(
+    const struct vfs_namespace_entry *entries,
+    const char *name
+)
+{
+    size_t index;
+
+    if (entries == 0 || name == 0) {
+        return 0;
+    }
+
+    for (index = 0u; entries[index].name != 0; ++index) {
+        if (string_equal(entries[index].name, name)) {
+            return &entries[index];
+        }
+    }
+
+    return 0;
+}
+
+static struct vfs_node *vfs_walk_path(const char *path)
+{
+    char component[16];
+    const struct vfs_namespace_entry *entries;
+    const struct vfs_namespace_entry *entry;
+    size_t path_index;
+    size_t component_index;
+
+    if (!namespace_ready || path == 0 || path[0] != '/') {
+        return 0;
+    }
+
+    if (path[1] == '\0') {
+        return 0;
+    }
+
+    entries = namespace_root_entries;
+    path_index = 1u;
+
+    for (;;) {
+        component_index = 0u;
+        while (path[path_index] != '\0' && path[path_index] != '/') {
+            if (component_index + 1u >= sizeof(component)) {
+                return 0;
+            }
+            component[component_index] = path[path_index];
+            ++component_index;
+            ++path_index;
+        }
+
+        if (component_index == 0u) {
+            return 0;
+        }
+
+        component[component_index] = '\0';
+        entry = vfs_find_child(entries, component);
+        if (entry == 0) {
+            return 0;
+        }
+
+        if (path[path_index] == '\0') {
+            return entry->node;
+        }
+
+        if (entry->children == 0) {
+            return 0;
+        }
+
+        ++path_index;
+        if (path[path_index] == '\0') {
+            return 0;
+        }
+
+        entries = entry->children;
+    }
+}
+
+static const struct vfs_namespace_entry namespace_dev_entries[2] = {
+    { "console", &namespace_console_output_node, 0 },
+    { 0, 0, 0 }
+};
+
+static const struct vfs_namespace_entry namespace_etc_entries[2] = {
+    { "banner", &namespace_banner_node, 0 },
+    { 0, 0, 0 }
+};
+
+static const struct vfs_namespace_entry namespace_root_entries[3] = {
+    { "dev", 0, namespace_dev_entries },
+    { "etc", 0, namespace_etc_entries },
+    { 0, 0, 0 }
+};
+
 void vfs_namespace_initialize(void)
 {
     static const struct vfs_node_ops console_input_ops = {
@@ -254,61 +365,14 @@ void vfs_namespace_initialize(void)
     vfs_node_initialize(&namespace_console_input_node, VFS_NODE_CONSOLE, &console_input_ops, &namespace_console_input_data);
     vfs_node_initialize(&namespace_console_output_node, VFS_NODE_CONSOLE, &console_output_ops, 0);
     vfs_node_initialize(&namespace_banner_node, VFS_NODE_STATIC_TEXT, &static_text_ops, &namespace_banner_data);
-
-    namespace_entries[0].path = "/dev/console";
-    namespace_entries[0].node = &namespace_console_output_node;
-    namespace_entries[1].path = "/etc/banner";
-    namespace_entries[1].node = &namespace_banner_node;
-    namespace_entries[2].path = 0;
-    namespace_entries[2].node = 0;
     namespace_ready = 1;
-}
-
-static struct vfs_node *vfs_lookup_path(const char *path)
-{
-    size_t index;
-
-    if (!namespace_ready || path == 0 || path[0] != '/') {
-        return 0;
-    }
-
-    if (path[1] == 'd' &&
-        path[2] == 'e' &&
-        path[3] == 'v' &&
-        path[4] == '/' &&
-        path[5] == 's' &&
-        path[6] == 't' &&
-        path[7] == 'd' &&
-        path[8] == 'i' &&
-        path[9] == 'n' &&
-        path[10] == '\0') {
-        return &namespace_console_input_node;
-    }
-
-    for (index = 0u; namespace_entries[index].path != 0; ++index) {
-        const char *entry_path;
-        size_t char_index;
-
-        entry_path = namespace_entries[index].path;
-        char_index = 0u;
-        while (entry_path[char_index] != '\0' && path[char_index] != '\0' &&
-               entry_path[char_index] == path[char_index]) {
-            ++char_index;
-        }
-
-        if (entry_path[char_index] == '\0' && path[char_index] == '\0') {
-            return namespace_entries[index].node;
-        }
-    }
-
-    return 0;
 }
 
 struct vfs_file *vfs_open_path(const char *path)
 {
     struct vfs_node *node;
 
-    node = vfs_lookup_path(path);
+    node = vfs_walk_path(path);
     if (node == 0) {
         return 0;
     }
@@ -409,6 +473,22 @@ void vfs_self_test(void)
 
     ch = 0;
     if (vfs_file_read(file, &ch, 1u) != 1 || ch != 'p' || vfs_file_close(file) != 0) {
+        write_line("vfs fail");
+        return;
+    }
+
+    file = vfs_open_path("/dev/console");
+    if (file == 0) {
+        write_line("vfs fail");
+        return;
+    }
+
+    if (vfs_file_write(file, "", 0u) != 0 || vfs_file_close(file) != 0) {
+        write_line("vfs fail");
+        return;
+    }
+
+    if (vfs_open_path("/dev") != 0 || vfs_open_path("etc/banner") != 0 || vfs_open_path("/etc/missing") != 0) {
         write_line("vfs fail");
         return;
     }
