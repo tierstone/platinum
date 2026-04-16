@@ -29,6 +29,16 @@ void user_init_main(void)
     }
 
     user_sys_exit();
+#elif defined(USER_TEST_FD_READ)
+    char ch;
+
+    ch = 0;
+    if (user_sys_read(0, &ch, 1u) != 1 || ch != '@' || user_sys_write(1, &ch, 1u) != 1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
 #elif defined(USER_TEST_BAD_SYSCALL)
     uint64_t result;
 

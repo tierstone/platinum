@@ -5,6 +5,20 @@
 
 #include <stdint.h>
 
+static inline uint64_t user_syscall0(uint64_t number)
+{
+    uint64_t result;
+
+    __asm__ __volatile__(
+        "int $0x80"
+        : "=a"(result)
+        : "a"(number)
+        : "memory"
+    );
+
+    return result;
+}
+
 static inline uint64_t user_syscall1(uint64_t number, uint64_t arg0)
 {
     uint64_t result;
@@ -13,6 +27,20 @@ static inline uint64_t user_syscall1(uint64_t number, uint64_t arg0)
         "int $0x80"
         : "=a"(result)
         : "a"(number), "D"(arg0)
+        : "memory"
+    );
+
+    return result;
+}
+
+static inline uint64_t user_syscall2(uint64_t number, uint64_t arg0, uint64_t arg1)
+{
+    uint64_t result;
+
+    __asm__ __volatile__(
+        "int $0x80"
+        : "=a"(result)
+        : "a"(number), "D"(arg0), "S"(arg1)
         : "memory"
     );
 
@@ -40,17 +68,22 @@ static inline void user_sys_putc(char ch)
 
 static inline void user_sys_yield(void)
 {
-    (void)user_syscall1((uint64_t)SYS_YIELD, 0u);
+    (void)user_syscall0((uint64_t)SYS_YIELD);
 }
 
 static inline uint64_t user_sys_get_ticks(void)
 {
-    return user_syscall1((uint64_t)SYS_GET_TICKS, 0u);
+    return user_syscall0((uint64_t)SYS_GET_TICKS);
 }
 
 static inline void user_sys_exit(void)
 {
-    (void)user_syscall1((uint64_t)SYS_EXIT, 0u);
+    (void)user_syscall0((uint64_t)SYS_EXIT);
+}
+
+static inline int64_t user_sys_read(int fd, void *buffer, uint64_t count)
+{
+    return (int64_t)user_syscall3((uint64_t)SYS_READ, (uint64_t)fd, (uint64_t)(uintptr_t)buffer, count);
 }
 
 static inline int64_t user_sys_write(int fd, const void *buffer, uint64_t count)

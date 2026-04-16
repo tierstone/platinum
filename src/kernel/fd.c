@@ -6,8 +6,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-struct fd_console {
+struct fd_console_output {
     uint32_t refs;
+};
+
+struct fd_console_input {
+    uint32_t refs;
+    char byte;
+    uint32_t used;
 };
 
 static size_t string_length(const char *text)
@@ -107,6 +113,18 @@ int fd_table_dup(struct fd_table *table, int fd)
     return fd_table_install(table, entry->kind, entry->object, entry->ops);
 }
 
+int fd_table_read(struct fd_table *table, int fd, void *buffer, size_t count)
+{
+    const struct fd_entry *entry;
+
+    entry = fd_table_get(table, fd);
+    if (entry == 0 || entry->ops == 0 || entry->ops->read == 0) {
+        return -1;
+    }
+
+    return entry->ops->read(entry->object, buffer, count);
+}
+
 int fd_table_write(struct fd_table *table, int fd, const void *buffer, size_t count)
 {
     const struct fd_entry *entry;
@@ -160,11 +178,11 @@ void fd_table_close_all(struct fd_table *table)
     }
 }
 
-static int fd_console_retain(void *object)
+static int fd_console_output_retain(void *object)
 {
-    struct fd_console *console;
+    struct fd_console_output *console;
 
-    console = (struct fd_console *)object;
+    console = (struct fd_console_output *)object;
     if (console == 0 || console->refs == 0u) {
         return -1;
     }
@@ -173,11 +191,11 @@ static int fd_console_retain(void *object)
     return 0;
 }
 
-static int fd_console_close(void *object)
+static int fd_console_output_close(void *object)
 {
-    struct fd_console *console;
+    struct fd_console_output *console;
 
-    console = (struct fd_console *)object;
+    console = (struct fd_console_output *)object;
     if (console == 0 || console->refs == 0u) {
         return -1;
     }
@@ -190,11 +208,11 @@ static int fd_console_close(void *object)
     return 0;
 }
 
-static int fd_console_write(void *object, const void *buffer, size_t count)
+static int fd_console_output_write(void *object, const void *buffer, size_t count)
 {
-    const struct fd_console *console;
+    const struct fd_console_output *console;
 
-    console = (const struct fd_console *)object;
+    console = (const struct fd_console_output *)object;
     if (console == 0 || console->refs == 0u) {
         return -1;
     }
@@ -210,32 +228,102 @@ static int fd_console_write(void *object, const void *buffer, size_t count)
     return (int)count;
 }
 
+static int fd_console_input_retain(void *object)
+{
+    struct fd_console_input *console;
+
+    console = (struct fd_console_input *)object;
+    if (console == 0 || console->refs == 0u) {
+        return -1;
+    }
+
+    ++console->refs;
+    return 0;
+}
+
+static int fd_console_input_close(void *object)
+{
+    struct fd_console_input *console;
+
+    console = (struct fd_console_input *)object;
+    if (console == 0 || console->refs == 0u) {
+        return -1;
+    }
+
+    --console->refs;
+    if (console->refs == 0u) {
+        kfree(console);
+    }
+
+    return 0;
+}
+
+static int fd_console_input_read(void *object, void *buffer, size_t count)
+{
+    struct fd_console_input *console;
+
+    console = (struct fd_console_input *)object;
+    if (console == 0 || console->refs == 0u) {
+        return -1;
+    }
+
+    if (buffer == 0 && count != 0u) {
+        return -1;
+    }
+
+    if (count == 0u) {
+        return 0;
+    }
+
+    if (console->used != 0u) {
+        return 0;
+    }
+
+    ((char *)buffer)[0] = console->byte;
+    console->used = 1u;
+    return 1;
+}
+
 int fd_table_seed_console(struct fd_table *table)
 {
-    static const struct fd_ops console_ops = {
-        fd_console_retain,
-        fd_console_close,
-        fd_console_write
+    static const struct fd_ops console_input_ops = {
+        fd_console_input_retain,
+        fd_console_input_close,
+        fd_console_input_read,
+        0
     };
-    struct fd_console *console;
+    static const struct fd_ops console_output_ops = {
+        fd_console_output_retain,
+        fd_console_output_close,
+        0,
+        fd_console_output_write
+    };
+    struct fd_console_input *input;
+    struct fd_console_output *output;
 
     if (table == 0) {
         return 0;
     }
 
-    console = (struct fd_console *)kzalloc(sizeof(*console));
-    if (console == 0) {
+    input = (struct fd_console_input *)kzalloc(sizeof(*input));
+    output = (struct fd_console_output *)kzalloc(sizeof(*output));
+    if (input == 0 || output == 0) {
+        kfree(input);
+        kfree(output);
         return 0;
     }
 
-    console->refs = 3u;
+    input->refs = 1u;
+    input->byte = '@';
+    input->used = 0u;
+    output->refs = 2u;
 
-    if (fd_table_install(table, FD_KIND_CONSOLE, console, &console_ops) != 0 ||
-        fd_table_install(table, FD_KIND_CONSOLE, console, &console_ops) != 1 ||
-        fd_table_install(table, FD_KIND_CONSOLE, console, &console_ops) != 2) {
-        fd_console_close(console);
-        fd_console_close(console);
-        fd_console_close(console);
+    if (fd_table_install(table, FD_KIND_CONSOLE, input, &console_input_ops) != 0 ||
+        fd_table_install(table, FD_KIND_CONSOLE, output, &console_output_ops) != 1 ||
+        fd_table_install(table, FD_KIND_CONSOLE, output, &console_output_ops) != 2) {
+        fd_console_input_close(input);
+        fd_console_output_close(output);
+        fd_console_output_close(output);
         return 0;
     }
 
@@ -253,12 +341,13 @@ static int fd_self_test_close(void *object)
 
 void fd_self_test(void)
 {
-    static const struct fd_ops close_ops = { 0, fd_self_test_close, 0 };
+    static const struct fd_ops close_ops = { 0, fd_self_test_close, 0, 0 };
     struct fd_table table;
     uint32_t close_count;
     int first_fd;
     int second_fd;
     int duplicate_fd;
+    char ch;
     const struct fd_entry *entry;
 
     close_count = 0u;
@@ -290,6 +379,11 @@ void fd_self_test(void)
 
     fd_table_initialize(&table);
     if (!fd_table_seed_console(&table)) {
+        write_line("fd fail");
+        return;
+    }
+
+    if (fd_table_read(&table, 0, &ch, 1u) != 1 || ch != '@') {
         write_line("fd fail");
         return;
     }

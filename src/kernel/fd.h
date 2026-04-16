@@ -17,6 +17,7 @@ typedef enum fd_kind {
 struct fd_ops {
     int (*retain)(void *object);
     int (*close)(void *object);
+    int (*read)(void *object, void *buffer, size_t count);
     int (*write)(void *object, const void *buffer, size_t count);
 };
 
@@ -35,6 +36,7 @@ void fd_table_initialize(struct fd_table *table);
 int fd_table_install(struct fd_table *table, fd_kind_t kind, void *object, const struct fd_ops *ops);
 const struct fd_entry *fd_table_get(const struct fd_table *table, int fd);
 int fd_table_dup(struct fd_table *table, int fd);
+int fd_table_read(struct fd_table *table, int fd, void *buffer, size_t count);
 int fd_table_write(struct fd_table *table, int fd, const void *buffer, size_t count);
 int fd_table_close(struct fd_table *table, int fd);
 void fd_table_close_all(struct fd_table *table);

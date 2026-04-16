@@ -281,69 +281,95 @@ uintptr_t kernel_timer_tick(uintptr_t current_rsp) {
     return sched_tick(current_rsp);
 }
 
+static void syscall_return(struct syscall_frame *frame, uint64_t result)
+{
+    frame->rax = result;
+}
+
+static int syscall_buffer_valid(const void *buffer, size_t count)
+{
+    if (count == 0u) {
+        return 1;
+    }
+
+    return buffer != 0;
+}
+
 uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
     struct syscall_frame *frame = (struct syscall_frame *)(void *)current_rsp;
     struct fd_table *fd_table;
 
-    if (frame->rax == SYS_PUTC) {
-        char ch = (char)(frame->rdi & 0xFFu);
-        serial_write(&ch, 1u);
-        frame->rax = 0u;
-        return current_rsp;
-    }
-
-    if (frame->rax == SYS_YIELD) {
-        frame->rax = 0u;
-        return sched_tick(current_rsp);
-    }
-
-    if (frame->rax == SYS_GET_TICKS) {
-	frame->rax = kernel_ticks;
-	return current_rsp;
-    }
-
-    if (frame->rax == SYS_EXIT) {
-        write_line("ring3 exit");
-        frame->rax = 0u;
-        return sched_exit_current(current_rsp);
-    }
-
     fd_table = sched_current_fd_table();
 
-    if (frame->rax == SYS_WRITE) {
-        if (fd_table == 0) {
-            frame->rax = (uint64_t)-1;
+    switch (frame->rax) {
+    case SYS_PUTC: {
+        char ch;
+
+        ch = (char)(frame->rdi & 0xFFu);
+        serial_write(&ch, 1u);
+        syscall_return(frame, SYS_RESULT_OK);
+        return current_rsp;
+    }
+    case SYS_YIELD:
+        syscall_return(frame, SYS_RESULT_OK);
+        return sched_tick(current_rsp);
+    case SYS_GET_TICKS:
+        syscall_return(frame, kernel_ticks);
+        return current_rsp;
+    case SYS_EXIT:
+        write_line("ring3 exit");
+        syscall_return(frame, SYS_RESULT_OK);
+        return sched_exit_current(current_rsp);
+    case SYS_READ:
+        if (fd_table == 0 ||
+            !syscall_buffer_valid((void *)(uintptr_t)frame->rsi, (size_t)frame->rdx)) {
+            syscall_return(frame, SYS_RESULT_ERROR);
             return current_rsp;
         }
-        frame->rax = (uint64_t)(int64_t)fd_table_write(
-            fd_table,
-            (int)frame->rdi,
-            (const void *)(uintptr_t)frame->rsi,
-            (size_t)frame->rdx
+        syscall_return(
+            frame,
+            (uint64_t)(int64_t)fd_table_read(
+                fd_table,
+                (int)frame->rdi,
+                (void *)(uintptr_t)frame->rsi,
+                (size_t)frame->rdx
+            )
         );
         return current_rsp;
-    }
-
-    if (frame->rax == SYS_CLOSE) {
-        if (fd_table == 0) {
-            frame->rax = (uint64_t)-1;
+    case SYS_WRITE:
+        if (fd_table == 0 ||
+            !syscall_buffer_valid((const void *)(uintptr_t)frame->rsi, (size_t)frame->rdx)) {
+            syscall_return(frame, SYS_RESULT_ERROR);
             return current_rsp;
         }
-        frame->rax = (uint64_t)(int64_t)fd_table_close(fd_table, (int)frame->rdi);
+        syscall_return(
+            frame,
+            (uint64_t)(int64_t)fd_table_write(
+                fd_table,
+                (int)frame->rdi,
+                (const void *)(uintptr_t)frame->rsi,
+                (size_t)frame->rdx
+            )
+        );
         return current_rsp;
-    }
-
-    if (frame->rax == SYS_DUP) {
+    case SYS_CLOSE:
         if (fd_table == 0) {
-            frame->rax = (uint64_t)-1;
+            syscall_return(frame, SYS_RESULT_ERROR);
             return current_rsp;
         }
-        frame->rax = (uint64_t)(int64_t)fd_table_dup(fd_table, (int)frame->rdi);
+        syscall_return(frame, (uint64_t)(int64_t)fd_table_close(fd_table, (int)frame->rdi));
+        return current_rsp;
+    case SYS_DUP:
+        if (fd_table == 0) {
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
+        syscall_return(frame, (uint64_t)(int64_t)fd_table_dup(fd_table, (int)frame->rdi));
+        return current_rsp;
+    default:
+        syscall_return(frame, SYS_RESULT_ERROR);
         return current_rsp;
     }
-
-    frame->rax = (uint64_t)-1;
-    return current_rsp;
 }
 
 void kernel_main(void *image_handle, void *system_table) {
