@@ -143,4 +143,4 @@ Working kernel, scheduler, syscall layer, basic VFS.
 
 ## License
 
-GPLv3. See `LICENSE`.
+GPLv3. See [LICENSE](LICENSE).
