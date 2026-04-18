@@ -17,11 +17,28 @@ from .paths import (
 from .proc import ensure_dir, object_path_for, remove_tree, run, source_files
 
 
-USER_PROGRAM_SOURCES = {
-    "init": Path("src/user/init.c"),
-    "pulse": Path("src/user/pulse.c"),
-    "echo": Path("src/user/echo.c"),
-}
+USER_PROGRAM_SPECS = (
+    ("init", Path("src/user/init.c")),
+    ("pulse", Path("src/user/pulse.c")),
+    ("echo", Path("src/user/echo.c")),
+)
+
+
+def user_program_sources() -> dict[str, Path]:
+    sources: dict[str, Path] = {}
+
+    for program_name, source in USER_PROGRAM_SPECS:
+        if "/" in program_name:
+            raise ValueError(f"invalid user program name: {program_name}")
+        if program_name in sources:
+            raise ValueError(f"duplicate user program name: {program_name}")
+        sources[program_name] = source
+
+    return sources
+
+
+USER_PROGRAM_SOURCES = user_program_sources()
+USER_PROGRAM_NAMES = tuple(program_name for program_name, _ in USER_PROGRAM_SPECS)
 
 
 def compile_sources(sources: list[Path], flags: list[str], extra_flags: list[str]) -> list[Path]:
@@ -115,11 +132,11 @@ def append_user_blob_program(lines: list[str], program_name: str, user_elf: Path
     ])
 
 
-def append_user_blob_registry(lines: list[str], user_programs: dict[str, Path]) -> None:
+def append_user_blob_registry(lines: list[str], user_programs: dict[str, Path], program_names: tuple[str, ...]) -> None:
     lines.extend([
         "const struct embedded_user_program embedded_user_program_registry[] = {",
     ])
-    for program_name, user_elf in user_programs.items():
+    for program_name in program_names:
         lines.append(
             f'    {{ "{program_name}", embedded_user_program_{program_name}_elf, '
             f"embedded_user_program_{program_name}_elf_size }},"
@@ -127,7 +144,7 @@ def append_user_blob_registry(lines: list[str], user_programs: dict[str, Path]) 
     lines.extend([
         "};",
         "",
-        f"const size_t embedded_user_program_registry_count = {len(user_programs)}u;",
+        f"const size_t embedded_user_program_registry_count = {len(program_names)}u;",
         "",
     ])
 
@@ -145,10 +162,10 @@ def generate_user_blob_source(user_programs: dict[str, Path], first_user_program
 
     lines = user_blob_prelude()
 
-    for program_name, user_elf in user_programs.items():
-        append_user_blob_program(lines, program_name, user_elf)
+    for program_name in USER_PROGRAM_NAMES:
+        append_user_blob_program(lines, program_name, user_programs[program_name])
 
-    append_user_blob_registry(lines, user_programs)
+    append_user_blob_registry(lines, user_programs, USER_PROGRAM_NAMES)
     append_first_user_program_metadata(lines, first_user_program)
 
     USER_BLOB_C.write_text("\n".join(lines), encoding="ascii")
@@ -158,7 +175,7 @@ def generate_user_blob_source(user_programs: dict[str, Path], first_user_program
 def build_embedded_user_programs(extra_flags: list[str]) -> dict[str, Path]:
     return {
         program_name: build_user_program(program_name, extra_flags)
-        for program_name in USER_PROGRAM_SOURCES
+        for program_name in USER_PROGRAM_NAMES
     }
 
 
@@ -341,7 +358,7 @@ def build_main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--user-program",
-        choices=sorted(USER_PROGRAM_SOURCES.keys()),
+        choices=list(USER_PROGRAM_NAMES),
         default="init",
         help="select embedded user ELF source program",
     )
