@@ -1,4 +1,5 @@
 #include "kernel/fd.h"
+#include "kernel/elf.h"
 #include "kernel/sched.h"
 #include "kernel/paging.h"
 #include "kernel/palloc.h"
@@ -21,6 +22,7 @@ typedef struct task {
     task_kind_t kind;
     uint32_t id;
     struct fd_table fd_table;
+    struct user_task_bootstrap user_bootstrap;
 } task_t;
 
 static task_t task0;
@@ -83,6 +85,45 @@ static void sched_validate_task(const task_t *task, task_state_t expected_state,
     if (task->cr3 == 0u || task->cr3 == paging_kernel_address_space()) {
         sched_fail("sched user cr3");
     }
+}
+
+static void sched_clear_user_bootstrap(struct user_task_bootstrap *bootstrap)
+{
+    if (bootstrap == 0) {
+        return;
+    }
+
+    bootstrap->layout.trampoline_base = 0u;
+    bootstrap->layout.image_base = 0u;
+    bootstrap->layout.stack_top = 0u;
+    bootstrap->address_space = 0u;
+    bootstrap->trampoline_entry = 0;
+    bootstrap->user_entry = 0;
+    bootstrap->image_physical_begin = 0u;
+    bootstrap->image_physical_end = 0u;
+    bootstrap->user_stack_page = 0u;
+    bootstrap->user_stack_top = 0u;
+}
+
+static void sched_release_user_bootstrap(struct user_task_bootstrap *bootstrap)
+{
+    struct loaded_user_image loaded_image;
+
+    if (bootstrap == 0 || bootstrap->address_space == 0u) {
+        return;
+    }
+
+    loaded_image.load_begin = 0u;
+    loaded_image.load_end = 0u;
+    loaded_image.load_physical_begin = bootstrap->image_physical_begin;
+    loaded_image.load_physical_end = bootstrap->image_physical_end;
+    loaded_image.entry = 0;
+    loaded_image.stack_page = bootstrap->user_stack_page;
+    loaded_image.stack_top = bootstrap->user_stack_top;
+
+    elf_release_user_image(&loaded_image);
+    paging_release_user_address_space(bootstrap->address_space, &bootstrap->layout);
+    sched_clear_user_bootstrap(bootstrap);
 }
 
 static task_t *sched_select_next(task_t *previous)
@@ -267,6 +308,7 @@ static int task_create_kernel(task_t *task, uint32_t id, void (*entry)(void))
     task->kind = TASK_KERNEL;
     task->id = id;
     fd_table_initialize(&task->fd_table);
+    sched_clear_user_bootstrap(&task->user_bootstrap);
     if (!fd_table_seed_console(&task->fd_table)) {
         return 0;
     }
@@ -297,6 +339,7 @@ static int task_create_user(task_t *task, uint32_t id, const struct user_task_bo
     task->state = TASK_RUNNABLE;
     task->kind = TASK_USER;
     task->id = id;
+    task->user_bootstrap = *bootstrap;
     fd_table_initialize(&task->fd_table);
     if (!fd_table_seed_console(&task->fd_table)) {
         return 0;
@@ -332,6 +375,7 @@ void sched_initialize(void)
     task0.state = TASK_UNUSED;
     task0.kind = TASK_KERNEL;
     task0.id = 0u;
+    sched_clear_user_bootstrap(&task0.user_bootstrap);
     fd_table_initialize(&task0.fd_table);
 
     task1.rsp = 0u;
@@ -339,6 +383,7 @@ void sched_initialize(void)
     task1.state = TASK_UNUSED;
     task1.kind = TASK_KERNEL;
     task1.id = 1u;
+    sched_clear_user_bootstrap(&task1.user_bootstrap);
     fd_table_initialize(&task1.fd_table);
 
     if (!task_create_kernel(&task0, 0u, task_idle)) {
@@ -391,6 +436,8 @@ uintptr_t sched_tick(uintptr_t current_rsp)
 
 uintptr_t sched_exit_current(uintptr_t current_rsp)
 {
+    struct user_task_bootstrap finished_bootstrap;
+
     (void)current_rsp;
 
     if (!sched_started || current == 0) {
@@ -398,12 +445,15 @@ uintptr_t sched_exit_current(uintptr_t current_rsp)
     }
 
     fd_table_close_all(&current->fd_table);
+    finished_bootstrap = current->user_bootstrap;
+    sched_clear_user_bootstrap(&current->user_bootstrap);
     current->rsp = 0u;
     current->state = TASK_DONE;
     current = sched_select_next(current);
     sched_validate_task(current, TASK_RUNNABLE, "sched exit next");
     paging_activate(current->cr3);
     current->state = TASK_RUNNING;
+    sched_release_user_bootstrap(&finished_bootstrap);
     return current->rsp;
 }
 
@@ -439,8 +489,36 @@ struct fd_table *sched_current_fd_table(void)
     return &current->fd_table;
 }
 
+int sched_current_user_context(struct user_virtual_layout *layout, uintptr_t *address_space)
+{
+    if (current == 0 || current->kind != TASK_USER || current->state != TASK_RUNNING) {
+        return 0;
+    }
+
+    if (layout != 0) {
+        *layout = current->user_bootstrap.layout;
+    }
+
+    if (address_space != 0) {
+        *address_space = current->user_bootstrap.address_space;
+    }
+
+    return current->user_bootstrap.address_space != 0u;
+}
+
+int sched_current_user_bootstrap(struct user_task_bootstrap *bootstrap)
+{
+    if (bootstrap == 0 || current == 0 || current->kind != TASK_USER || current->state != TASK_RUNNING) {
+        return 0;
+    }
+
+    *bootstrap = current->user_bootstrap;
+    return current->user_bootstrap.address_space != 0u;
+}
+
 uintptr_t sched_exec_current(const struct user_task_bootstrap *bootstrap)
 {
+    struct user_task_bootstrap previous_bootstrap;
     uintptr_t rsp;
 
     if (!sched_started || current == 0 || current->kind != TASK_USER || current->state != TASK_RUNNING) {
@@ -460,14 +538,23 @@ uintptr_t sched_exec_current(const struct user_task_bootstrap *bootstrap)
         return 0u;
     }
 
+    /* On success, scheduler consumes bootstrap ownership and releases prior task image. */
     fd_table_close_all(&current->fd_table);
     fd_table_initialize(&current->fd_table);
     if (!fd_table_seed_console(&current->fd_table)) {
         return 0u;
     }
 
+    previous_bootstrap = current->user_bootstrap;
+    if (previous_bootstrap.image_physical_begin == bootstrap->image_physical_begin &&
+        previous_bootstrap.image_physical_end == bootstrap->image_physical_end) {
+        previous_bootstrap.image_physical_begin = 0u;
+        previous_bootstrap.image_physical_end = 0u;
+    }
     current->rsp = rsp;
     current->cr3 = bootstrap->address_space;
+    current->user_bootstrap = *bootstrap;
     paging_activate(current->cr3);
+    sched_release_user_bootstrap(&previous_bootstrap);
     return current->rsp;
 }

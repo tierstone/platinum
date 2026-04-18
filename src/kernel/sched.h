@@ -21,11 +21,15 @@ struct user_task_bootstrap {
     uintptr_t address_space;
     void (*trampoline_entry)(void);
     void (*user_entry)(void);
+    uintptr_t image_physical_begin;
+    uintptr_t image_physical_end;
     uintptr_t user_stack_page;
     uintptr_t user_stack_top;
 };
 
 struct fd_table *sched_current_fd_table(void);
+int sched_current_user_context(struct user_virtual_layout *layout, uintptr_t *address_space);
+int sched_current_user_bootstrap(struct user_task_bootstrap *bootstrap);
 uintptr_t sched_exec_current(const struct user_task_bootstrap *bootstrap);
 void sched_enable_user_task(const struct user_task_bootstrap *bootstrap);
 void sched_initialize(void);

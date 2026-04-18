@@ -4,7 +4,184 @@
 
 void user_init_main(void)
 {
-#ifdef USER_TEST_FD_WRITE
+#ifdef USER_TEST_DUP_FULL
+    int64_t duplicates[16];
+    int64_t fd;
+    int index;
+    char ok[11];
+
+    for (index = 0; index < 16; ++index) {
+        duplicates[index] = -1;
+    }
+
+    for (index = 0; index < 13; ++index) {
+        fd = user_sys_dup(1);
+        if (fd < 0) {
+            user_sys_putc('!');
+            user_sys_exit();
+        }
+        duplicates[index] = fd;
+    }
+
+    if (user_sys_dup(1) != -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    for (index = 0; index < 13; ++index) {
+        if (user_sys_close((int)duplicates[index]) != 0) {
+            user_sys_putc('!');
+            user_sys_exit();
+        }
+    }
+
+    ok[0] = 'd';
+    ok[1] = 'u';
+    ok[2] = 'p';
+    ok[3] = 'f';
+    ok[4] = 'u';
+    ok[5] = 'l';
+    ok[6] = 'l';
+    ok[7] = ' ';
+    ok[8] = 'o';
+    ok[9] = 'k';
+    ok[10] = '\n';
+    if (user_sys_write(1, ok, 11u) != 11) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
+#elif defined(USER_TEST_BAD_POINTERS)
+    char ok[7];
+
+    if (user_sys_read(0, (void *)(uintptr_t)0u, 1u) != -1 ||
+        user_sys_write(1, (const void *)(uintptr_t)0u, 1u) != -1 ||
+        user_sys_read(0, (void *)(uintptr_t)0x50000000ull, 1u) != -1 ||
+        user_sys_write(1, (const void *)(uintptr_t)0x401fffffull, 2u) != -1 ||
+        user_sys_open((const char *)(uintptr_t)0x50000000ull) != -1 ||
+        user_sys_exec((const char *)(uintptr_t)0x50000000ull) != -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    ok[0] = 'p';
+    ok[1] = 't';
+    ok[2] = 'r';
+    ok[3] = ' ';
+    ok[4] = 'o';
+    ok[5] = 'k';
+    ok[6] = '\n';
+    if (user_sys_write(1, ok, 7u) != 7) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
+#elif defined(USER_TEST_EXEC_LOOP)
+    char path[11];
+
+    path[0] = '/';
+    path[1] = 'b';
+    path[2] = 'i';
+    path[3] = 'n';
+    path[4] = '/';
+    path[5] = 'p';
+    path[6] = 'u';
+    path[7] = 'l';
+    path[8] = 's';
+    path[9] = 'e';
+    path[10] = '\0';
+
+    if (user_sys_exec(path) == -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_putc('!');
+    user_sys_exit();
+#elif defined(USER_TEST_EXEC_BAD_LOOP)
+    char path[11];
+    char ok[12];
+
+    path[0] = '/';
+    path[1] = 'b';
+    path[2] = 'i';
+    path[3] = 'n';
+    path[4] = '/';
+    path[5] = 'p';
+    path[6] = 'u';
+    path[7] = 'l';
+    path[8] = 's';
+    path[9] = 'e';
+    path[10] = '\0';
+
+    while (user_sys_get_ticks() < 4u) {
+        if (user_sys_exec(path) != -1) {
+            user_sys_putc('!');
+            user_sys_exit();
+        }
+    }
+
+    ok[0] = 'e';
+    ok[1] = 'x';
+    ok[2] = 'e';
+    ok[3] = 'c';
+    ok[4] = 'b';
+    ok[5] = 'a';
+    ok[6] = 'd';
+    ok[7] = ' ';
+    ok[8] = 'o';
+    ok[9] = 'k';
+    ok[10] = '\n';
+    ok[11] = '\0';
+    if (user_sys_write(1, ok, 11u) != 11) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
+#elif defined(USER_TEST_EXEC_TRANSFER_FAIL)
+    char path[11];
+    char ok[12];
+
+    path[0] = '/';
+    path[1] = 'b';
+    path[2] = 'i';
+    path[3] = 'n';
+    path[4] = '/';
+    path[5] = 'p';
+    path[6] = 'u';
+    path[7] = 'l';
+    path[8] = 's';
+    path[9] = 'e';
+    path[10] = '\0';
+
+    if (user_sys_exec(path) != -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    ok[0] = 'e';
+    ok[1] = 'x';
+    ok[2] = 'e';
+    ok[3] = 'c';
+    ok[4] = 'x';
+    ok[5] = 'f';
+    ok[6] = 'e';
+    ok[7] = 'r';
+    ok[8] = ' ';
+    ok[9] = 'o';
+    ok[10] = 'k';
+    ok[11] = '\n';
+    ok[12] = '\0';
+    if (user_sys_write(1, ok, 12u) != 12) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
+#elif defined(USER_TEST_FD_WRITE)
     char out1;
     char out2;
     int64_t dup_fd;

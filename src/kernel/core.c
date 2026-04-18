@@ -67,6 +67,12 @@ static void configure_first_user_task(void) {
 
     bootstrap.layout = first_user_layout;
     bootstrap.address_space = paging_create_user_address_space();
+    bootstrap.trampoline_entry = 0;
+    bootstrap.user_entry = 0;
+    bootstrap.image_physical_begin = 0u;
+    bootstrap.image_physical_end = 0u;
+    bootstrap.user_stack_page = 0u;
+    bootstrap.user_stack_top = 0u;
     if (bootstrap.address_space == 0u || !paging_address_space_valid(bootstrap.address_space)) {
         write_line("user as fail");
         arch_halt_forever();
@@ -97,6 +103,8 @@ static void configure_first_user_task(void) {
                 user_image_size,
                 &bootstrap.layout,
                 bootstrap.address_space,
+                0u,
+                0u,
                 &loaded_image)) {
             write_line("user elf fail");
             arch_halt_forever();
@@ -117,6 +125,8 @@ static void configure_first_user_task(void) {
 
         bootstrap.trampoline_entry = (void (*)(void))trampoline_entry;
         bootstrap.user_entry = loaded_image.entry;
+        bootstrap.image_physical_begin = loaded_image.load_physical_begin;
+        bootstrap.image_physical_end = loaded_image.load_physical_end;
         bootstrap.user_stack_page = loaded_image.stack_page;
         bootstrap.user_stack_top = loaded_image.stack_top;
     } else {
@@ -155,6 +165,8 @@ static void configure_first_user_task(void) {
 
         bootstrap.trampoline_entry = (void (*)(void))trampoline_entry;
         bootstrap.user_entry = (void (*)(void))user_entry;
+        bootstrap.image_physical_begin = 0u;
+        bootstrap.image_physical_end = 0u;
         bootstrap.user_stack_page = user_stack_page;
         bootstrap.user_stack_top = bootstrap.layout.stack_top;
     }
@@ -296,20 +308,102 @@ static int syscall_buffer_valid(const void *buffer, size_t count)
     return buffer != 0;
 }
 
-static int syscall_copy_path(char *dst, size_t dst_size, const char *src)
+static void syscall_clear_bootstrap(struct user_task_bootstrap *bootstrap)
+{
+    bootstrap->layout.trampoline_base = 0u;
+    bootstrap->layout.image_base = 0u;
+    bootstrap->layout.stack_top = 0u;
+    bootstrap->address_space = 0u;
+    bootstrap->trampoline_entry = 0;
+    bootstrap->user_entry = 0;
+    bootstrap->image_physical_begin = 0u;
+    bootstrap->image_physical_end = 0u;
+    bootstrap->user_stack_page = 0u;
+    bootstrap->user_stack_top = 0u;
+}
+
+static int syscall_user_range_in_layout(
+    const struct user_virtual_layout *layout,
+    uintptr_t start,
+    size_t count
+)
+{
+    uintptr_t end;
+
+    if (layout == 0 || start < layout->trampoline_base || start >= layout->stack_top) {
+        return 0;
+    }
+
+    if (count == 0u) {
+        return 1;
+    }
+
+    end = start + (uintptr_t)(count - 1u);
+    if (end < start || end >= layout->stack_top) {
+        return 0;
+    }
+
+    return 1;
+}
+
+static int syscall_user_buffer_valid(
+    uintptr_t address_space,
+    const struct user_virtual_layout *layout,
+    const void *buffer,
+    size_t count
+)
+{
+    uintptr_t start;
+
+    /* Proof-stage contract: validate user virtual range and mapped user pages,
+     * then dereference directly. This is not a fault-contained copyin/copyout path.
+     */
+    if (!syscall_buffer_valid(buffer, count)) {
+        return 0;
+    }
+
+    if (count == 0u) {
+        return 1;
+    }
+
+    start = (uintptr_t)buffer;
+    if (!syscall_user_range_in_layout(layout, start, count)) {
+        return 0;
+    }
+
+    return paging_user_range_mapped(address_space, start, count);
+}
+
+static int syscall_copy_path(
+    char *dst,
+    size_t dst_size,
+    const char *src,
+    uintptr_t address_space,
+    const struct user_virtual_layout *layout
+)
 {
     size_t index;
+    uintptr_t address;
 
+    /* Same proof-stage contract as syscall_user_buffer_valid(): validate first,
+     * then copy by direct dereference.
+     */
     if (dst == 0 || dst_size == 0u || src == 0) {
         return 0;
     }
 
-    if (src[0] != '/') {
-        return 0;
-    }
-
     for (index = 0u; index + 1u < dst_size; ++index) {
+        address = (uintptr_t)src + index;
+        if (address < (uintptr_t)src ||
+            !syscall_user_range_in_layout(layout, address, 1u) ||
+            !paging_user_range_mapped(address_space, address, 1u)) {
+            return 0;
+        }
+
         dst[index] = src[index];
+        if (index == 0u && dst[index] != '/') {
+            return 0;
+        }
         if (src[index] == '\0') {
             return 1;
         }
@@ -318,9 +412,33 @@ static int syscall_copy_path(char *dst, size_t dst_size, const char *src)
     return 0;
 }
 
+static void syscall_release_bootstrap(struct user_task_bootstrap *bootstrap)
+{
+    struct loaded_user_image loaded_image;
+
+    if (bootstrap == 0) {
+        return;
+    }
+
+    loaded_image.load_begin = 0u;
+    loaded_image.load_end = 0u;
+    loaded_image.load_physical_begin = bootstrap->image_physical_begin;
+    loaded_image.load_physical_end = bootstrap->image_physical_end;
+    loaded_image.reusable_physical_begin = 0u;
+    loaded_image.reusable_physical_end = 0u;
+    loaded_image.entry = 0;
+    loaded_image.stack_page = bootstrap->user_stack_page;
+    loaded_image.stack_top = bootstrap->user_stack_top;
+
+    elf_release_user_image(&loaded_image);
+    paging_release_user_address_space(bootstrap->address_space, &bootstrap->layout);
+    syscall_clear_bootstrap(bootstrap);
+}
+
 static int syscall_prepare_exec_bootstrap(
     const uint8_t *image,
     size_t image_size,
+    const struct user_task_bootstrap *current_bootstrap,
     struct user_task_bootstrap *bootstrap
 )
 {
@@ -329,19 +447,41 @@ static int syscall_prepare_exec_bootstrap(
     uintptr_t trampoline_page;
     uintptr_t trampoline_entry;
 
+    /* Ownership stays with caller until sched_exec_current() succeeds. */
+    syscall_clear_bootstrap(bootstrap);
+    loaded_image.load_begin = 0u;
+    loaded_image.load_end = 0u;
+    loaded_image.load_physical_begin = 0u;
+    loaded_image.load_physical_end = 0u;
+    loaded_image.reusable_physical_begin = 0u;
+    loaded_image.reusable_physical_end = 0u;
+    loaded_image.entry = 0;
+    loaded_image.stack_page = 0u;
+    loaded_image.stack_top = 0u;
+
     bootstrap->layout = first_user_layout;
     address_space = paging_create_user_address_space();
     if (address_space == 0u || !paging_address_space_valid(address_space)) {
         return 0;
     }
 
-    if (!elf_load_user_image(image, image_size, &bootstrap->layout, address_space, &loaded_image)) {
+    if (!elf_load_user_image(
+            image,
+            image_size,
+            &bootstrap->layout,
+            address_space,
+            current_bootstrap == 0 ? 0u : current_bootstrap->image_physical_begin,
+            current_bootstrap == 0 ? 0u : current_bootstrap->image_physical_end,
+            &loaded_image)) {
+        paging_release_user_address_space(address_space, &bootstrap->layout);
         return 0;
     }
 
     trampoline_page = (uintptr_t)(void *)arch_user_program_entry & ~(uintptr_t)4095u;
     paging_map_user_page(address_space, bootstrap->layout.trampoline_base, trampoline_page);
     if (!paging_mapping_matches(address_space, bootstrap->layout.trampoline_base, trampoline_page, 1)) {
+        elf_release_user_image(&loaded_image);
+        paging_release_user_address_space(address_space, &bootstrap->layout);
         return 0;
     }
 
@@ -351,6 +491,8 @@ static int syscall_prepare_exec_bootstrap(
     bootstrap->address_space = address_space;
     bootstrap->trampoline_entry = (void (*)(void))trampoline_entry;
     bootstrap->user_entry = loaded_image.entry;
+    bootstrap->image_physical_begin = loaded_image.load_physical_begin;
+    bootstrap->image_physical_end = loaded_image.load_physical_end;
     bootstrap->user_stack_page = loaded_image.stack_page;
     bootstrap->user_stack_top = loaded_image.stack_top;
     return 1;
@@ -378,12 +520,29 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
         syscall_return(frame, kernel_ticks);
         return current_rsp;
     case SYS_EXIT:
-        write_line("ring3 exit");
         syscall_return(frame, SYS_RESULT_OK);
         return sched_exit_current(current_rsp);
     case SYS_READ:
+    case SYS_WRITE:
+    case SYS_OPEN:
+    case SYS_EXEC: {
+        struct user_virtual_layout user_layout;
+        uintptr_t user_address_space;
+
+        if (!sched_current_user_context(&user_layout, &user_address_space)) {
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
+
+        switch (frame->rax) {
+        case SYS_READ:
         if (fd_table == 0 ||
-            !syscall_buffer_valid((void *)(uintptr_t)frame->rsi, (size_t)frame->rdx)) {
+            !syscall_user_buffer_valid(
+                user_address_space,
+                &user_layout,
+                (void *)(uintptr_t)frame->rsi,
+                (size_t)frame->rdx
+            )) {
             syscall_return(frame, SYS_RESULT_ERROR);
             return current_rsp;
         }
@@ -397,9 +556,14 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
             )
         );
         return current_rsp;
-    case SYS_WRITE:
+        case SYS_WRITE:
         if (fd_table == 0 ||
-            !syscall_buffer_valid((const void *)(uintptr_t)frame->rsi, (size_t)frame->rdx)) {
+            !syscall_user_buffer_valid(
+                user_address_space,
+                &user_layout,
+                (const void *)(uintptr_t)frame->rsi,
+                (size_t)frame->rdx
+            )) {
             syscall_return(frame, SYS_RESULT_ERROR);
             return current_rsp;
         }
@@ -413,28 +577,20 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
             )
         );
         return current_rsp;
-    case SYS_CLOSE:
-        if (fd_table == 0) {
-            syscall_return(frame, SYS_RESULT_ERROR);
-            return current_rsp;
-        }
-        syscall_return(frame, (uint64_t)(int64_t)fd_table_close(fd_table, (int)frame->rdi));
-        return current_rsp;
-    case SYS_DUP:
-        if (fd_table == 0) {
-            syscall_return(frame, SYS_RESULT_ERROR);
-            return current_rsp;
-        }
-        syscall_return(frame, (uint64_t)(int64_t)fd_table_dup(fd_table, (int)frame->rdi));
-        return current_rsp;
-    case SYS_OPEN: {
+        case SYS_OPEN: {
         char path[64];
         struct vfs_file *file;
         fd_kind_t kind;
         int fd;
 
         if (fd_table == 0 ||
-            !syscall_copy_path(path, sizeof(path), (const char *)(uintptr_t)frame->rdi)) {
+            !syscall_copy_path(
+                path,
+                sizeof(path),
+                (const char *)(uintptr_t)frame->rdi,
+                user_address_space,
+                &user_layout
+            )) {
             syscall_return(frame, SYS_RESULT_ERROR);
             return current_rsp;
         }
@@ -455,16 +611,22 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
 
         syscall_return(frame, (uint64_t)(int64_t)fd);
         return current_rsp;
-    }
-    case SYS_EXEC: {
+        }
+        case SYS_EXEC: {
         char path[64];
         struct vfs_file *file;
         const uint8_t *image;
         size_t image_size;
         struct user_task_bootstrap bootstrap;
+        struct user_task_bootstrap current_bootstrap;
         uintptr_t next_rsp;
 
-        if (!syscall_copy_path(path, sizeof(path), (const char *)(uintptr_t)frame->rdi)) {
+        if (!syscall_copy_path(
+                path,
+                sizeof(path),
+                (const char *)(uintptr_t)frame->rdi,
+                user_address_space,
+                &user_layout)) {
             syscall_return(frame, SYS_RESULT_ERROR);
             return current_rsp;
         }
@@ -481,19 +643,45 @@ uintptr_t kernel_syscall_entry(uintptr_t current_rsp) {
             return current_rsp;
         }
 
-        if (vfs_file_close(file) != 0 || !syscall_prepare_exec_bootstrap(image, image_size, &bootstrap)) {
+        if (vfs_file_close(file) != 0 ||
+            !sched_current_user_bootstrap(&current_bootstrap) ||
+            !syscall_prepare_exec_bootstrap(image, image_size, &current_bootstrap, &bootstrap)) {
             syscall_return(frame, SYS_RESULT_ERROR);
             return current_rsp;
         }
 
+#ifdef USER_TEST_EXEC_TRANSFER_FAIL
+        bootstrap.trampoline_entry = 0;
+#endif
+
         next_rsp = sched_exec_current(&bootstrap);
         if (next_rsp == 0u) {
+            syscall_release_bootstrap(&bootstrap);
             syscall_return(frame, SYS_RESULT_ERROR);
             return current_rsp;
         }
 
         return next_rsp;
+        }
+        default:
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
     }
+    case SYS_CLOSE:
+        if (fd_table == 0) {
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
+        syscall_return(frame, (uint64_t)(int64_t)fd_table_close(fd_table, (int)frame->rdi));
+        return current_rsp;
+    case SYS_DUP:
+        if (fd_table == 0) {
+            syscall_return(frame, SYS_RESULT_ERROR);
+            return current_rsp;
+        }
+        syscall_return(frame, (uint64_t)(int64_t)fd_table_dup(fd_table, (int)frame->rdi));
+        return current_rsp;
     default:
         syscall_return(frame, SYS_RESULT_ERROR);
         return current_rsp;

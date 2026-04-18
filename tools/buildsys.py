@@ -209,6 +209,42 @@ def user_init_flags(mode: str) -> list[str]:
             "-DUSER_TEST_EXEC=1",
         ]
 
+    if mode == "dup-full":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_DUP_FULL=1",
+        ]
+
+    if mode == "bad-pointers":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_BAD_POINTERS=1",
+        ]
+
+    if mode == "exec-loop":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_EXEC_LOOP=1",
+        ]
+
+    if mode == "exec-bad-loop":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_EXEC_BAD_LOOP=1",
+            "-DUSER_TEST_BAD_EXEC_IMAGE=1",
+        ]
+
+    if mode == "exec-transfer-fail":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_EXEC_TRANSFER_FAIL=1",
+        ]
+
     raise ValueError(f"unknown user init mode: {mode}")
 
 
@@ -242,7 +278,7 @@ def build_main(argv: list[str] | None = None) -> None:
     parser.add_argument("target", choices=["all", "efi", "clean"])
     parser.add_argument(
         "--user-init",
-        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf"],
+        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf", "dup-full", "bad-pointers", "exec-loop", "exec-bad-loop", "exec-transfer-fail"],
         default="off",
         help="select first scheduled user task path for test builds",
     )

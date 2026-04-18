@@ -100,6 +100,7 @@ const struct fd_entry *fd_table_get(const struct fd_table *table, int fd)
 int fd_table_dup(struct fd_table *table, int fd)
 {
     const struct fd_entry *entry;
+    int duplicate_fd;
 
     entry = fd_table_get(table, fd);
     if (entry == 0) {
@@ -110,7 +111,13 @@ int fd_table_dup(struct fd_table *table, int fd)
         return -1;
     }
 
-    return fd_table_install(table, entry->kind, entry->file);
+    duplicate_fd = fd_table_install(table, entry->kind, entry->file);
+    if (duplicate_fd < 0) {
+        (void)vfs_file_close(entry->file);
+        return -1;
+    }
+
+    return duplicate_fd;
 }
 
 int fd_table_read(struct fd_table *table, int fd, void *buffer, size_t count)
@@ -356,6 +363,7 @@ void fd_self_test(void)
     int first_fd;
     int second_fd;
     int duplicate_fd;
+    int index;
     char ch;
     uint32_t placeholder_a_released;
     uint32_t placeholder_b_released;
@@ -400,6 +408,32 @@ void fd_self_test(void)
     }
 
     if (fd_table_close(&table, duplicate_fd) != 0 || fd_table_close(&table, 1) != 0) {
+        write_line("fd fail");
+        return;
+    }
+
+    fd_table_close_all(&table);
+    fd_table_initialize(&table);
+    placeholder_a_released = 0u;
+    first_fd = fd_table_install(&table, FD_KIND_PLACEHOLDER, fd_make_placeholder_file(&placeholder_a_released));
+    if (first_fd != 0) {
+        write_line("fd fail");
+        return;
+    }
+
+    for (index = 1; index < fd_table_capacity; ++index) {
+        if (fd_table_install(&table, FD_KIND_PLACEHOLDER, fd_make_placeholder_file(&placeholder_b_released)) != index) {
+            write_line("fd fail");
+            return;
+        }
+    }
+
+    if (fd_table_dup(&table, first_fd) != -1 || placeholder_a_released != 0u) {
+        write_line("fd fail");
+        return;
+    }
+
+    if (fd_table_close(&table, first_fd) != 0 || placeholder_a_released != 1u) {
         write_line("fd fail");
         return;
     }

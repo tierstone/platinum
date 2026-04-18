@@ -36,6 +36,12 @@ struct vfs_namespace_entry {
 extern const uint8_t embedded_user_program_elf[];
 extern const size_t embedded_user_program_elf_size;
 
+#ifdef USER_TEST_BAD_EXEC_IMAGE
+static const uint8_t bad_exec_image[] = {
+    0x00u, 0x45u, 0x4cu, 0x46u
+};
+#endif
+
 static struct vfs_console_input_data namespace_console_input_data;
 static struct vfs_node namespace_root_node;
 static struct vfs_node namespace_dev_node;
@@ -437,8 +443,13 @@ void vfs_namespace_initialize(void)
     namespace_console_input_data.used = 0u;
     namespace_banner_data.text = "platinum\n";
     namespace_banner_data.length = 9u;
+#ifdef USER_TEST_BAD_EXEC_IMAGE
+    namespace_pulse_data.image = bad_exec_image;
+    namespace_pulse_data.size = sizeof(bad_exec_image);
+#else
     namespace_pulse_data.image = embedded_user_program_elf;
     namespace_pulse_data.size = embedded_user_program_elf_size;
+#endif
 
     vfs_node_initialize(&namespace_root_node, VFS_NODE_DIRECTORY, &directory_ops, 0);
     vfs_node_initialize(&namespace_dev_node, VFS_NODE_DIRECTORY, &directory_ops, 0);

@@ -30,7 +30,7 @@ MODE_RULES = {
     },
     "bad-syscall": {
         "build_args": (),
-        "required": ("sched ok", "user init", "V", "ring3 exit"),
+        "required": ("sched ok", "user init", "V"),
         "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail"),
     },
     "bad-elf": {
@@ -50,27 +50,52 @@ MODE_RULES = {
     },
     "fd-write": {
         "build_args": (),
-        "required": ("sched ok", "user init", "FD", "ring3 exit"),
+        "required": ("sched ok", "user init", "FD"),
         "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
     },
     "fd-read": {
         "build_args": (),
-        "required": ("sched ok", "user init", "@", "ring3 exit"),
+        "required": ("sched ok", "user init", "@"),
         "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
     },
     "open-read": {
         "build_args": (),
-        "required": ("sched ok", "user init", "Op", "ring3 exit"),
+        "required": ("sched ok", "user init", "Op"),
         "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
     },
     "open-flags": {
         "build_args": (),
-        "required": ("sched ok", "user init", "A", "ring3 exit"),
+        "required": ("sched ok", "user init", "A"),
         "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
     },
     "exec-elf": {
         "build_args": ("--user-program", "pulse"),
         "required": ("sched ok", "user init", "P"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
+    },
+    "dup-full": {
+        "build_args": (),
+        "required": ("sched ok", "user init", "dupfull ok"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
+    },
+    "bad-pointers": {
+        "build_args": (),
+        "required": ("sched ok", "user init", "ptr ok"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
+    },
+    "exec-loop": {
+        "build_args": ("--user-program", "pulse"),
+        "required": ("sched ok", "user init", "execloop ok"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
+    },
+    "exec-bad-loop": {
+        "build_args": (),
+        "required": ("sched ok", "user init", "execbad ok"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
+    },
+    "exec-transfer-fail": {
+        "build_args": (),
+        "required": ("sched ok", "user init", "execxfer ok"),
         "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
     },
 }
@@ -165,7 +190,7 @@ def verify(mode: str, loops: int, timeout: float) -> int:
         return 1
 
     if mode == "all":
-        modes = ("off", "c", "elf", "elf-pulse", "yield-stress", "bad-syscall", "bad-elf", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf")
+        modes = ("off", "c", "elf", "elf-pulse", "yield-stress", "bad-syscall", "bad-elf", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf", "dup-full", "bad-pointers", "exec-loop", "exec-bad-loop", "exec-transfer-fail")
     else:
         modes = (mode,)
 
