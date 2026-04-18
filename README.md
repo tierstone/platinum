@@ -1,211 +1,169 @@
+Here is a clean rewrite. Same substance, tighter, no fluff, no corporate tone.
+
+---
+
 # Platinum (/p/OS)
-64-bit OS written in C. Runs exclusively on QEMU x86_64. GPLv3.
+
+64-bit OS built from scratch in C. Runs only on QEMU x86_64 under OVMF. GPLv3.
 
 ## Stack
 
-| | |
-|---|---|
-| **Kernel** | C99/C11 (Strict) |
-| **Userspace utilities** | Rust |
-| **Compiler** | Clang/LLVM, Rust toolchain |
-| **LibC** | musl |
-| **License** | GPLv3 |
-| **Target** | QEMU x86_64 (`q35`, OVMF) |
-| **Drivers** | VirtIO only (Net, Block, Console, RNG) |
+|                     |                                   |
+| ------------------- | --------------------------------- |
+| Kernel              | C99/C11                           |
+| Userspace (planned) | Rust                              |
+| Compiler            | Clang/LLVM                        |
+| LibC                | musl                              |
+| Target              | QEMU x86_64 (`q35`, OVMF)         |
+| Drivers             | VirtIO (net, block, console, rng) |
 
-## Design Philosophy
+## What it is
 
-/p/OS is a pragmatic hybrid. It takes the usability of Linux (GNU tools, ELF binaries), the security mindset of OpenBSD (privilege separation, clean code), and the architectural simplicity of FreeBSD (userspace networking, simple init). Built on standard Unix principles, stripped of hardware baggage to run purely on QEMU. The goal isn't to reinvent the wheel, just build a smaller, cleaner one from scratch.
+A small Unix-shaped kernel built to run in a controlled environment. No real hardware support. No shortcuts through existing kernels.
 
-The kernel stays close to the metal and stays in C. Userspace tools that benefit from safer string handling, parsing, and state management will be written in Rust.
+The goal is simple: build the core pieces cleanly and understand them fully.
 
-## AI Policy
+## Current state
 
-AI tools are allowed for reference, exploration, and boilerplate generation.
+Phase 1 is done.
 
-All code committed to the repository must be:
-- understood,
-- reviewed,
-- and intentionally written or adapted by a human.
+The system boots through UEFI, sets up paging, runs a preemptive scheduler, and executes user programs through a syscall interface.
 
-Automated or agentic workflows that generate and publish code without human review are not permitted.
+Working parts:
 
-The rule is simple: if you can't explain the code, it doesn't belong in the tree.
+* UEFI boot, ExitBootServices, GDT, IDT, paging
+* Physical page allocator and basic kernel heap
+* Timer-based preemptive scheduler
+* Kernel thread switching
+* `int 0x80` syscall interface:
+  `putc`, `yield`, `get_ticks`, `exit`, `read`, `write`, `close`, `dup`, `open`, `exec`
+* Ring 3 execution for:
 
-## Build & Run
+  * direct C user task
+  * embedded static ELF64 binaries
+* Small VFS with in-memory namespace:
+  `/dev/console`, `/etc/banner`, `/bin`
+* Path-based `open` with basic access checks
+* Embedded executable registry under `/bin`:
+  `/bin/pulse`, `/bin/echo`
+* Per-task file descriptor table with console-backed stdio
+* Syscall boundary checks user address ranges and mapped pages before access
+* Regression suite covering syscall, exec, fd, namespace, and failure cases
 
-**Prerequisites:** Clang/LLVM (`clang`, `lld-link`, `ld.lld`), Python 3, QEMU, OVMF (`edk2-ovmf`).
+What is not done:
+
+* No general ELF loader
+* No fault-contained user memory access
+* No disk, filesystem, or networking
+* No shell
+
+This is still proof-stage userspace.
+
+## Language split
+
+Kernel stays in C.
+
+* boot, traps, interrupts
+* scheduler, paging, allocators
+* drivers and low-level state
+
+Userspace will use Rust where it helps:
+
+* tools, services, anything string-heavy
+
+No ideology behind it. Just use the right tool.
+
+## AI policy
+
+AI is fine as a tool.
+
+All code that goes in must be understood and reviewed by a human. No blind generation.
+
+If you cannot explain it, it does not belong here.
+
+## Build and run
+
+Requirements: Clang, lld, Python 3, QEMU, OVMF.
 
 ```bash
-# Quick environment check
 python3 manage.py doctor
-
-# Build the EFI binary
 python3 manage.py build
-
-# Launch in QEMU
 python3 manage.py boot
-
-# Run the standard regression matrix once
 python3 manage.py verify
-
-# Verify one path
 python3 manage.py verify --mode elf
-
-# Stress one path
 python3 manage.py stress --mode yield-stress --loops 25 --timeout 5
-
-# Clean build artifacts
 python3 manage.py clean
 ```
 
-Optional test builds:
+Optional builds:
 
 ```bash
-# Default known-good worker boot path
 python3 manage.py build --user-init off
-
-# Direct in-kernel C user task bootstrap
 python3 manage.py build --user-init c
-
-# Embedded static ELF user task bootstrap
 python3 manage.py build --user-init elf
-
-# Same ELF path, second embedded user program source
 python3 manage.py build --user-init elf --user-program pulse
 ```
 
-The default remains `--user-init off`. The direct C user task path is simpler proof path. Embedded ELF path is build-selectable and proven end-to-end for multiple embedded static ELF64 ET_EXEC test programs. Build tooling now embeds a small fixed registry of user ELFs for namespace-backed `/bin`, while still letting the selected `--user-program` choose the first-user bootstrap image. Loader handles normal `PT_LOAD` segment loading for static x86_64 ELF64 inputs, but whole path is still proof-stage and not a general file-backed userspace loading system.
+Default is `--user-init off`.
 
-## Language Plan
-
-The split is straightforward:
-
-### C
-
-C is for the kernel and low-level system code:
-
-* early boot
-* traps / IRQs / syscall entry
-* scheduler
-* paging / address spaces
-* allocators
-* drivers
-* low-level storage bring-up
-* other code that sits directly on hardware or CPU state
-
-### Rust
-
-Rust is for userspace programs that benefit from stronger safety around strings, buffers, parsing, and service logic:
-
-* `putils`
-* `psup`
-* `logd`
-* likely parts of networking tools
-* possibly more userspace daemons later
-
-This is a practical split, not a religion.
+The ELF path works for embedded static binaries with normal `PT_LOAD` segments. It is not a general loader.
 
 ## Roadmap
 
-### Phase 1: Kernel Bring-up
+### Phase 1: bring-up (done)
 
-Focus: reach stable scheduled usermode execution.
+Working kernel, scheduler, syscall layer, basic VFS.
 
-Current status: timer-driven preemptive kernel threads and small `int 0x80` syscall ABI work under QEMU. Current syscall set includes `putc`, `yield`, `get_ticks`, `exit`, plus minimal fd-backed `read`, `write`, `close`, `dup`, `open`, and `exec`, with consistent `0` / value / `-1` return behavior. Small kernel heap is live and exercised during bring-up. Small VFS skeleton is live, with explicit vnode-style nodes, open-file objects, and tiny in-memory namespace tree support. `open` now walks absolute path components through a fixed tree rooted at `/`, with entries such as `/dev/console`, `/etc/banner`, and `/bin`, and enforces small access-mode and node-type checks. Tiny namespace-backed executable launch is also real now: a small embedded executable registry under `/bin` exposes at least `/bin/pulse` and `/bin/echo`, and those images can be loaded through kernel interfaces instead of only first-task bootstrap wiring. Disabled-by-default first user task path still works through direct in-kernel C bootstrap. Proof-stage embedded static ELF64 path also works end-to-end for multiple embedded test user programs, handles normal `PT_LOAD` segment loading by ELF virtual address layout, and is still not a general file-backed program loading system. The current syscall boundary validates user virtual ranges plus mapped user pages before direct dereference, but it is still proof-stage and not a full fault-contained copyin/copyout implementation. Python tooling now uses `manage.py` as unified entry point, and verification covers worker, direct user, embedded ELF, stress, fd, namespace-open, namespace-exec, and targeted negative-path runtime cases including `dup-full`, `bad-pointers`, `exec-loop`, `exec-bad-loop`, `exec-transfer-fail`, and `exec-registry`.
+### Phase 2: memory and process
 
-* [x] UEFI entry (x86_64 COFF entry point, `boot.S`)
-* [x] Early serial output (UART `0x3F8`, `serial.c`)
-* [x] Build pipeline (Clang + `lld-link`)
-* [x] QEMU/OVMF launch (`boot.py`)
-* [x] ExitBootServices (leave EFI and enter kernel context)
-* [x] GDT setup
-* [x] IDT setup + basic exception handlers
-* [x] UEFI memory map parsing
-* [x] Paging (4KB pages, initial identity map)
-* [x] Physical page allocator (reusable free-list)
-* [x] Small kernel heap
-* [x] Small VFS skeleton
-* [x] Minimal kernel fd table layer
-* [x] Timer interrupt (PIT via QEMU)
-* [x] Minimal preemptive scheduler
-* [x] Kernel thread context switching
-* [x] Syscall entry via `int 0x80`
-* [x] Shared syscall number definitions
-* [x] Minimal fd syscalls (`read`, `write`, `close`, `dup`, `open`, `exec`)
-* [x] First scheduled user task bootstrap
-* [x] Ring3 syscall return + task done state
-* [x] Persistent first user C task loop
-* [x] Run first usermode program
+Make the user boundary real.
 
-### Phase 2: Memory and Process Foundations
-
-Focus: turn proof-stage userspace execution into a real kernel/userspace boundary.
-
-* [ ] Static ELF loading beyond embedded proof-stage test programs
-* [ ] User address-space refinement
-* [ ] Virtual memory refinement
+* [ ] General ELF loading
+* [ ] User address space cleanup
+* [ ] Virtual memory improvements
 * [ ] Buddy allocator
 * [ ] Slab allocator
 
-### Phase 3: Kernel Interfaces
+### Phase 3: kernel interfaces
 
-Focus: provide the basic kernel abstractions userspace will need.
+* [ ] Syscall cleanup and expansion
+* [ ] Better fd handling
+* [ ] VFS growth
+* [ ] Executable loading beyond embedded images
 
-* [ ] Syscall interface cleanup and expansion
-* [ ] File descriptor growth beyond console-backed stdio and current read/write/open/exec semantics
-* [ ] VFS namespace growth beyond tiny in-memory absolute-path tree
-* [ ] Executable loading beyond single embedded namespace-backed ELF image
-* [ ] Basic VFS namespace objects
+### Phase 4: storage
 
-### Phase 4: Storage
+* [ ] VirtIO block
+* [ ] Minimal filesystem
+* [ ] `mkfs`
+* [ ] Mount root
 
-Focus: persistent state.
+### Phase 5: base userspace
 
-* [ ] VirtIO-block driver
-* [ ] Minimal filesystem (simple, stable baseline)
-* [ ] `mkfs` utility
-* [ ] Mount root filesystem
+* [ ] `pinit`
+* [ ] `psup`
+* [ ] shell
+* [ ] `login` / `getty`
+* [ ] core tools (`cat`, `ls`, `cp`, `rm`)
 
-*(Optional, later)*
+### Phase 6: networking
 
-* [ ] `/p/FS` (log-structured, CoW design)
+* [ ] VirtIO net
+* [ ] userspace TCP/IP
+* [ ] DHCP
+* [ ] basic network tools
+* [ ] SSH
+* [ ] simple HTTP client
 
-### Phase 5: Base Userspace
+### Phase 7: polish
 
-Focus: first usable system.
-
-Base userspace will be split by job:
-
-* low-level kernel-facing pieces stay simple
-* utility-heavy and service-heavy programs move to Rust where it pays off
-
-- [ ] `pinit` (PID 1, likely C at first)
-- [ ] `psup` (service supervisor, Rust)
-- [ ] `sh` (basic shell, language undecided)
-- [ ] `login` / `getty` (likely C at first)
-- [ ] `putils` (Rust core utilities: `cat`, `ls`, `cp`, `rm`, etc.)
-
-### Phase 6: Networking
-
-Focus: connectivity.
-
-* [ ] VirtIO-net driver
-* [ ] `netd` (userspace TCP/IP stack, language undecided)
-* [ ] DHCP client (likely Rust)
-* [ ] Basic tools (`ping`, `ip/ifconfig`)
-* [ ] SSH (Dropbear/OpenSSH, musl-linked)
-* [ ] Minimal HTTP client (likely Rust)
-
-### Phase 7: System Polish
-
-* [ ] `logd` (logging daemon, Rust)
-* [ ] `cron`
-* [ ] Process tools (`ps`, `top`, `kill`, `nice`) via `putils` / userspace tools
-* [ ] `man` viewer
-* [ ] Size optimization (`-Os`, LTO)
-* [ ] Documentation cleanup
+* [ ] logging
+* [ ] cron
+* [ ] process tools
+* [ ] man viewer
+* [ ] size reduction
+* [ ] documentation cleanup
 
 ## License
 
-GPLv3. See [`LICENSE`](LICENSE).
+GPLv3. See `LICENSE`.
