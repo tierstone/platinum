@@ -1,4 +1,5 @@
 #include "kernel/core.h"
+#include "kernel/embedded_user_programs.h"
 #include "kernel/elf.h"
 #include "kernel/vfs.h"
 #include "kernel/fd.h"
@@ -58,8 +59,6 @@ static const struct user_virtual_layout first_user_layout = {
 #endif
 
 void user_init_main(void);
-extern const uint8_t embedded_user_program_elf[];
-extern const size_t embedded_user_program_elf_size;
 static void write_line(const char *text);
 
 static void configure_first_user_task(void) {
@@ -94,8 +93,8 @@ static void configure_first_user_task(void) {
             user_image = bad_user_image;
             user_image_size = sizeof(bad_user_image);
         } else {
-            user_image = embedded_user_program_elf;
-            user_image_size = embedded_user_program_elf_size;
+            user_image = embedded_first_user_program_image;
+            user_image_size = embedded_first_user_program_size;
         }
 
         if (!elf_load_user_image(
@@ -355,9 +354,6 @@ static int syscall_user_buffer_valid(
 {
     uintptr_t start;
 
-    /* Proof-stage contract: validate user virtual range and mapped user pages,
-     * then dereference directly. This is not a fault-contained copyin/copyout path.
-     */
     if (!syscall_buffer_valid(buffer, count)) {
         return 0;
     }
@@ -385,9 +381,6 @@ static int syscall_copy_path(
     size_t index;
     uintptr_t address;
 
-    /* Same proof-stage contract as syscall_user_buffer_valid(): validate first,
-     * then copy by direct dereference.
-     */
     if (dst == 0 || dst_size == 0u || src == 0) {
         return 0;
     }
@@ -447,7 +440,6 @@ static int syscall_prepare_exec_bootstrap(
     uintptr_t trampoline_page;
     uintptr_t trampoline_entry;
 
-    /* Ownership stays with caller until sched_exec_current() succeeds. */
     syscall_clear_bootstrap(bootstrap);
     loaded_image.load_begin = 0u;
     loaded_image.load_end = 0u;

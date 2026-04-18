@@ -538,7 +538,6 @@ uintptr_t sched_exec_current(const struct user_task_bootstrap *bootstrap)
         return 0u;
     }
 
-    /* On success, scheduler consumes bootstrap ownership and releases prior task image. */
     fd_table_close_all(&current->fd_table);
     fd_table_initialize(&current->fd_table);
     if (!fd_table_seed_console(&current->fd_table)) {

@@ -1,5 +1,6 @@
 #include "kernel/vfs.h"
 #include "kernel/core.h"
+#include "kernel/embedded_user_programs.h"
 #include "kernel/heap.h"
 #include "drivers/serial.h"
 
@@ -33,9 +34,6 @@ struct vfs_namespace_entry {
     const struct vfs_namespace_entry *children;
 };
 
-extern const uint8_t embedded_user_program_elf[];
-extern const size_t embedded_user_program_elf_size;
-
 #ifdef USER_TEST_BAD_EXEC_IMAGE
 static const uint8_t bad_exec_image[] = {
     0x00u, 0x45u, 0x4cu, 0x46u
@@ -51,11 +49,11 @@ static struct vfs_node namespace_console_input_node;
 static struct vfs_node namespace_console_output_node;
 static struct vfs_static_text_data namespace_banner_data;
 static struct vfs_node namespace_banner_node;
-static struct vfs_executable_data namespace_pulse_data;
-static struct vfs_node namespace_pulse_node;
+static struct vfs_executable_data namespace_executable_data[3];
+static struct vfs_node namespace_executable_nodes[3];
 static const struct vfs_namespace_entry namespace_dev_entries[2];
 static const struct vfs_namespace_entry namespace_etc_entries[2];
-static const struct vfs_namespace_entry namespace_bin_entries[2];
+static struct vfs_namespace_entry namespace_bin_entries[4];
 static const struct vfs_namespace_entry namespace_root_entries[4];
 static int namespace_ready;
 
@@ -399,17 +397,35 @@ static const struct vfs_namespace_entry namespace_etc_entries[2] = {
     { 0, 0, 0 }
 };
 
-static const struct vfs_namespace_entry namespace_bin_entries[2] = {
-    { "pulse", &namespace_pulse_node, 0 },
-    { 0, 0, 0 }
-};
-
 static const struct vfs_namespace_entry namespace_root_entries[4] = {
     { "dev", &namespace_dev_node, namespace_dev_entries },
     { "etc", &namespace_etc_node, namespace_etc_entries },
     { "bin", &namespace_bin_node, namespace_bin_entries },
     { 0, 0, 0 }
 };
+
+static int vfs_program_image(
+    const struct embedded_user_program *program,
+    const uint8_t **image,
+    size_t *size
+)
+{
+    if (program == 0 || image == 0 || size == 0) {
+        return 0;
+    }
+
+#ifdef USER_TEST_BAD_EXEC_IMAGE
+    if (string_equal(program->name, "pulse")) {
+        *image = bad_exec_image;
+        *size = sizeof(bad_exec_image);
+        return 1;
+    }
+#endif
+
+    *image = program->image;
+    *size = program->size;
+    return *image != 0 && *size != 0u;
+}
 
 void vfs_namespace_initialize(void)
 {
@@ -438,18 +454,12 @@ void vfs_namespace_initialize(void)
         0,
         0
     };
+    size_t index;
 
     namespace_console_input_data.byte = '@';
     namespace_console_input_data.used = 0u;
     namespace_banner_data.text = "platinum\n";
     namespace_banner_data.length = 9u;
-#ifdef USER_TEST_BAD_EXEC_IMAGE
-    namespace_pulse_data.image = bad_exec_image;
-    namespace_pulse_data.size = sizeof(bad_exec_image);
-#else
-    namespace_pulse_data.image = embedded_user_program_elf;
-    namespace_pulse_data.size = embedded_user_program_elf_size;
-#endif
 
     vfs_node_initialize(&namespace_root_node, VFS_NODE_DIRECTORY, &directory_ops, 0);
     vfs_node_initialize(&namespace_dev_node, VFS_NODE_DIRECTORY, &directory_ops, 0);
@@ -458,7 +468,35 @@ void vfs_namespace_initialize(void)
     vfs_node_initialize(&namespace_console_input_node, VFS_NODE_CONSOLE, &console_input_ops, &namespace_console_input_data);
     vfs_node_initialize(&namespace_console_output_node, VFS_NODE_CONSOLE, &console_output_ops, 0);
     vfs_node_initialize(&namespace_banner_node, VFS_NODE_STATIC_TEXT, &static_text_ops, &namespace_banner_data);
-    vfs_node_initialize(&namespace_pulse_node, VFS_NODE_EXECUTABLE, &executable_ops, &namespace_pulse_data);
+
+    if (embedded_user_program_registry_count + 1u > (sizeof(namespace_bin_entries) / sizeof(namespace_bin_entries[0])) ||
+        embedded_user_program_registry_count > (sizeof(namespace_executable_data) / sizeof(namespace_executable_data[0]))) {
+        vfs_fail("vfs init fail");
+    }
+
+    for (index = 0u; index < embedded_user_program_registry_count; ++index) {
+        const uint8_t *image;
+        size_t size;
+
+        if (!vfs_program_image(&embedded_user_program_registry[index], &image, &size)) {
+            vfs_fail("vfs init fail");
+        }
+
+        namespace_executable_data[index].image = image;
+        namespace_executable_data[index].size = size;
+        vfs_node_initialize(
+            &namespace_executable_nodes[index],
+            VFS_NODE_EXECUTABLE,
+            &executable_ops,
+            &namespace_executable_data[index]
+        );
+        namespace_bin_entries[index].name = embedded_user_program_registry[index].name;
+        namespace_bin_entries[index].node = &namespace_executable_nodes[index];
+        namespace_bin_entries[index].children = 0;
+    }
+    namespace_bin_entries[index].name = 0;
+    namespace_bin_entries[index].node = 0;
+    namespace_bin_entries[index].children = 0;
     namespace_ready = 1;
 }
 
@@ -610,11 +648,28 @@ void vfs_self_test(void)
         }
     }
 
+    file = vfs_open_exec_path("/bin/echo");
+    if (file == 0) {
+        write_line("vfs fail");
+        return;
+    }
+
+    {
+        const uint8_t *image;
+        size_t size;
+
+        if (vfs_file_executable_image(file, &image, &size) != 0 || image == 0 || size == 0u || vfs_file_close(file) != 0) {
+            write_line("vfs fail");
+            return;
+        }
+    }
+
     if (vfs_open_path("/dev", VFS_ACCESS_READ) != 0 ||
         vfs_open_path("etc/banner", VFS_ACCESS_READ) != 0 ||
         vfs_open_path("/etc/missing", VFS_ACCESS_READ) != 0 ||
         vfs_open_path("/etc/banner", VFS_ACCESS_WRITE) != 0 ||
         vfs_open_path("/dev/console", VFS_ACCESS_READ) != 0 ||
+        vfs_open_exec_path("/bin/missing") != 0 ||
         vfs_open_exec_path("/etc/banner") != 0) {
         write_line("vfs fail");
         return;

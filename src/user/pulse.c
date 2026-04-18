@@ -48,6 +48,27 @@ void user_init_main(void)
     }
 
     user_sys_exit();
+#elif defined(USER_TEST_EXEC_REGISTRY)
+    char path[10];
+
+    path[0] = '/';
+    path[1] = 'b';
+    path[2] = 'i';
+    path[3] = 'n';
+    path[4] = '/';
+    path[5] = 'e';
+    path[6] = 'c';
+    path[7] = 'h';
+    path[8] = 'o';
+    path[9] = '\0';
+
+    if (user_sys_exec(path) == -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_putc('!');
+    user_sys_exit();
 #else
     uint64_t ticks;
     uint64_t previous;

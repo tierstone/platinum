@@ -181,6 +181,48 @@ void user_init_main(void)
     }
 
     user_sys_exit();
+#elif defined(USER_TEST_EXEC_REGISTRY)
+    char pulse[11];
+    char missing[13];
+
+    missing[0] = '/';
+    missing[1] = 'b';
+    missing[2] = 'i';
+    missing[3] = 'n';
+    missing[4] = '/';
+    missing[5] = 'm';
+    missing[6] = 'i';
+    missing[7] = 's';
+    missing[8] = 's';
+    missing[9] = 'i';
+    missing[10] = 'n';
+    missing[11] = 'g';
+    missing[12] = '\0';
+
+    pulse[0] = '/';
+    pulse[1] = 'b';
+    pulse[2] = 'i';
+    pulse[3] = 'n';
+    pulse[4] = '/';
+    pulse[5] = 'p';
+    pulse[6] = 'u';
+    pulse[7] = 'l';
+    pulse[8] = 's';
+    pulse[9] = 'e';
+    pulse[10] = '\0';
+
+    if (user_sys_exec(missing) != -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    if (user_sys_exec(pulse) == -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_putc('!');
+    user_sys_exit();
 #elif defined(USER_TEST_FD_WRITE)
     char out1;
     char out2;

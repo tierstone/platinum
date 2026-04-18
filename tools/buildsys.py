@@ -13,7 +13,6 @@ from .paths import (
     TARGET_EFI,
     USER_BLOB_C,
     USER_BUILD_DIR,
-    USER_PROGRAM_ELF,
 )
 from .proc import ensure_dir, object_path_for, remove_tree, run, source_files
 
@@ -21,6 +20,7 @@ from .proc import ensure_dir, object_path_for, remove_tree, run, source_files
 USER_PROGRAM_SOURCES = {
     "init": Path("src/user/init.c"),
     "pulse": Path("src/user/pulse.c"),
+    "echo": Path("src/user/echo.c"),
 }
 
 
@@ -41,8 +41,9 @@ def compile_sources(sources: list[Path], flags: list[str], extra_flags: list[str
 
 def build_user_program(user_program: str, extra_flags: list[str]) -> Path:
     user_source = USER_PROGRAM_SOURCES[user_program]
-    user_object = USER_BUILD_DIR / (user_source.stem + ".o")
+    user_object = USER_BUILD_DIR / (user_program + ".o")
     user_linker_script = Path("src/user/link.ld")
+    user_elf = USER_BUILD_DIR / (user_program + ".elf")
 
     ensure_dir(USER_BUILD_DIR)
     run([
@@ -77,23 +78,28 @@ def build_user_program(user_program: str, extra_flags: list[str]) -> Path:
         "-T",
         str(user_linker_script),
         "-o",
-        str(USER_PROGRAM_ELF),
+        str(user_elf),
         str(user_object),
     ])
 
-    return USER_PROGRAM_ELF
+    return user_elf
 
 
-def generate_user_blob_source(user_elf: Path) -> Path:
-    data = user_elf.read_bytes()
-    ensure_dir(USER_BLOB_C.parent)
-
-    lines = [
+def user_blob_prelude() -> list[str]:
+    return [
+        '#include "kernel/embedded_user_programs.h"',
         "#include <stddef.h>",
         "#include <stdint.h>",
         "",
-        "const uint8_t embedded_user_program_elf[] = {",
     ]
+
+
+def append_user_blob_program(lines: list[str], program_name: str, user_elf: Path) -> None:
+    data = user_elf.read_bytes()
+
+    lines.extend([
+        f"const uint8_t embedded_user_program_{program_name}_elf[] = {{",
+    ])
 
     index = 0
     while index < len(data):
@@ -104,12 +110,56 @@ def generate_user_blob_source(user_elf: Path) -> Path:
     lines.extend([
         "};",
         "",
-        f"const size_t embedded_user_program_elf_size = {len(data)}u;",
+        f"const size_t embedded_user_program_{program_name}_elf_size = {len(data)}u;",
         "",
     ])
 
+
+def append_user_blob_registry(lines: list[str], user_programs: dict[str, Path]) -> None:
+    lines.extend([
+        "const struct embedded_user_program embedded_user_program_registry[] = {",
+    ])
+    for program_name, user_elf in user_programs.items():
+        lines.append(
+            f'    {{ "{program_name}", embedded_user_program_{program_name}_elf, '
+            f"embedded_user_program_{program_name}_elf_size }},"
+        )
+    lines.extend([
+        "};",
+        "",
+        f"const size_t embedded_user_program_registry_count = {len(user_programs)}u;",
+        "",
+    ])
+
+
+def append_first_user_program_metadata(lines: list[str], first_user_program: str) -> None:
+    lines.extend([
+        f"const uint8_t *embedded_first_user_program_image = embedded_user_program_{first_user_program}_elf;",
+        f"const size_t embedded_first_user_program_size = embedded_user_program_{first_user_program}_elf_size;",
+        "",
+    ])
+
+
+def generate_user_blob_source(user_programs: dict[str, Path], first_user_program: str) -> Path:
+    ensure_dir(USER_BLOB_C.parent)
+
+    lines = user_blob_prelude()
+
+    for program_name, user_elf in user_programs.items():
+        append_user_blob_program(lines, program_name, user_elf)
+
+    append_user_blob_registry(lines, user_programs)
+    append_first_user_program_metadata(lines, first_user_program)
+
     USER_BLOB_C.write_text("\n".join(lines), encoding="ascii")
     return USER_BLOB_C
+
+
+def build_embedded_user_programs(extra_flags: list[str]) -> dict[str, Path]:
+    return {
+        program_name: build_user_program(program_name, extra_flags)
+        for program_name in USER_PROGRAM_SOURCES
+    }
 
 
 def link_efi(objects: list[Path]) -> None:
@@ -245,6 +295,13 @@ def user_init_flags(mode: str) -> list[str]:
             "-DUSER_TEST_EXEC_TRANSFER_FAIL=1",
         ]
 
+    if mode == "exec-registry":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_EXEC_REGISTRY=1",
+        ]
+
     raise ValueError(f"unknown user init mode: {mode}")
 
 
@@ -259,8 +316,8 @@ def build(user_init_mode: str, user_program: str) -> None:
         )
     ]
     extra_cflags = user_init_flags(user_init_mode)
-    user_elf = build_user_program(user_program, extra_cflags)
-    generated_blob = generate_user_blob_source(user_elf)
+    user_programs = build_embedded_user_programs(extra_cflags)
+    generated_blob = generate_user_blob_source(user_programs, user_program)
 
     ensure_dir(BUILD_DIR)
 
@@ -278,7 +335,7 @@ def build_main(argv: list[str] | None = None) -> None:
     parser.add_argument("target", choices=["all", "efi", "clean"])
     parser.add_argument(
         "--user-init",
-        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf", "dup-full", "bad-pointers", "exec-loop", "exec-bad-loop", "exec-transfer-fail"],
+        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf", "dup-full", "bad-pointers", "exec-loop", "exec-bad-loop", "exec-transfer-fail", "exec-registry"],
         default="off",
         help="select first scheduled user task path for test builds",
     )
