@@ -1,7 +1,3 @@
-Here is a clean rewrite. Same substance, tighter, no fluff, no corporate tone.
-
----
-
 # Platinum (/p/OS)
 
 64-bit OS built from scratch in C. Runs only on QEMU x86_64 under OVMF. GPLv3.
