@@ -39,6 +39,7 @@ def user_program_sources() -> dict[str, Path]:
 
 USER_PROGRAM_SOURCES = user_program_sources()
 USER_PROGRAM_NAMES = tuple(program_name for program_name, _ in USER_PROGRAM_SPECS)
+EMBEDDED_USER_PROGRAM_NAMES = USER_PROGRAM_NAMES + ("badelf2",)
 
 
 def compile_sources(sources: list[Path], flags: list[str], extra_flags: list[str]) -> list[Path]:
@@ -132,6 +133,32 @@ def append_user_blob_program(lines: list[str], program_name: str, user_elf: Path
     ])
 
 
+def append_badelf2_program(lines: list[str], user_elf: Path) -> None:
+    data = bytearray(user_elf.read_bytes())
+
+    if len(data) < 4:
+        raise ValueError("embedded program too small for badelf2")
+
+    data[0] = 0x00
+
+    lines.extend([
+        "const uint8_t embedded_user_program_badelf2_elf[] = {",
+    ])
+
+    index = 0
+    while index < len(data):
+        chunk = data[index:index + 12]
+        lines.append("    " + ", ".join(f"0x{byte:02x}" for byte in chunk) + ",")
+        index += len(chunk)
+
+    lines.extend([
+        "};",
+        "",
+        f"const size_t embedded_user_program_badelf2_elf_size = {len(data)}u;",
+        "",
+    ])
+
+
 def append_user_blob_registry(lines: list[str], user_programs: dict[str, Path], program_names: tuple[str, ...]) -> None:
     lines.extend([
         "const struct embedded_user_program embedded_user_program_registry[] = {",
@@ -165,7 +192,9 @@ def generate_user_blob_source(user_programs: dict[str, Path], first_user_program
     for program_name in USER_PROGRAM_NAMES:
         append_user_blob_program(lines, program_name, user_programs[program_name])
 
-    append_user_blob_registry(lines, user_programs, USER_PROGRAM_NAMES)
+    append_badelf2_program(lines, user_programs["pulse"])
+
+    append_user_blob_registry(lines, user_programs, EMBEDDED_USER_PROGRAM_NAMES)
     append_first_user_program_metadata(lines, first_user_program)
 
     USER_BLOB_C.write_text("\n".join(lines), encoding="ascii")
@@ -347,6 +376,13 @@ def user_init_flags(mode: str) -> list[str]:
             "-DUSER_TEST_EXEC_NONEXEC=1",
         ]
 
+    if mode == "exec-bad-elf2":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_EXEC_BAD_ELF2=1",
+        ]
+
     raise ValueError(f"unknown user init mode: {mode}")
 
 
@@ -380,7 +416,7 @@ def build_main(argv: list[str] | None = None) -> None:
     parser.add_argument("target", choices=["all", "efi", "clean"])
     parser.add_argument(
         "--user-init",
-        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf", "dup-full", "bad-pointers", "exec-loop", "exec-bad-loop", "exec-transfer-fail", "exec-registry", "exec-paths", "exec-root", "exec-noent", "exec-nonexec"],
+        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf", "dup-full", "bad-pointers", "exec-loop", "exec-bad-loop", "exec-transfer-fail", "exec-registry", "exec-paths", "exec-root", "exec-noent", "exec-nonexec", "exec-bad-elf2"],
         default="off",
         help="select first scheduled user task path for test builds",
     )

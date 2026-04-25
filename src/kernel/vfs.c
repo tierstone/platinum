@@ -49,11 +49,11 @@ static struct vfs_node namespace_console_input_node;
 static struct vfs_node namespace_console_output_node;
 static struct vfs_static_text_data namespace_banner_data;
 static struct vfs_node namespace_banner_node;
-static struct vfs_executable_data namespace_executable_data[3];
-static struct vfs_node namespace_executable_nodes[3];
+static struct vfs_executable_data namespace_executable_data[4];
+static struct vfs_node namespace_executable_nodes[4];
 static const struct vfs_namespace_entry namespace_dev_entries[2];
 static const struct vfs_namespace_entry namespace_etc_entries[2];
-static struct vfs_namespace_entry namespace_bin_entries[4];
+static struct vfs_namespace_entry namespace_bin_entries[5];
 static const struct vfs_namespace_entry namespace_root_entries[4];
 static int namespace_ready;
 
