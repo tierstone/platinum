@@ -223,6 +223,92 @@ void user_init_main(void)
 
     user_sys_putc('!');
     user_sys_exit();
+#elif defined(USER_TEST_EXEC_PATHS)
+    char trailing[12];
+    char doubled[12];
+    char ok[13];
+
+    trailing[0] = '/';
+    trailing[1] = 'b';
+    trailing[2] = 'i';
+    trailing[3] = 'n';
+    trailing[4] = '/';
+    trailing[5] = 'p';
+    trailing[6] = 'u';
+    trailing[7] = 'l';
+    trailing[8] = 's';
+    trailing[9] = 'e';
+    trailing[10] = '/';
+    trailing[11] = '\0';
+
+    doubled[0] = '/';
+    doubled[1] = 'b';
+    doubled[2] = 'i';
+    doubled[3] = 'n';
+    doubled[4] = '/';
+    doubled[5] = '/';
+    doubled[6] = 'p';
+    doubled[7] = 'u';
+    doubled[8] = 'l';
+    doubled[9] = 's';
+    doubled[10] = 'e';
+    doubled[11] = '\0';
+
+    if (user_sys_exec(trailing) != -1 || user_sys_exec(doubled) != -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    ok[0] = 'e';
+    ok[1] = 'x';
+    ok[2] = 'e';
+    ok[3] = 'c';
+    ok[4] = 'p';
+    ok[5] = 'a';
+    ok[6] = 't';
+    ok[7] = 'h';
+    ok[8] = ' ';
+    ok[9] = 'o';
+    ok[10] = 'k';
+    ok[11] = '\n';
+    ok[12] = '\0';
+    if (user_sys_write(1, ok, 12u) != 12) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
+#elif defined(USER_TEST_EXEC_DIR_ROOT)
+    char root[2];
+    char ok[13];
+
+    root[0] = '/';
+    root[1] = '\0';
+
+    if (user_sys_exec(root) != -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    ok[0] = 'e';
+    ok[1] = 'x';
+    ok[2] = 'e';
+    ok[3] = 'c';
+    ok[4] = 'r';
+    ok[5] = 'o';
+    ok[6] = 'o';
+    ok[7] = 't';
+    ok[8] = ' ';
+    ok[9] = 'o';
+    ok[10] = 'k';
+    ok[11] = '\n';
+    ok[12] = '\0';
+    if (user_sys_write(1, ok, 12u) != 12) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
 #elif defined(USER_TEST_FD_WRITE)
     char out1;
     char out2;

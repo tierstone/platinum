@@ -19,7 +19,7 @@ OVMF_*.fd
 *.tmp
 *.out
 *.dump
-dump.txt
+dump.sh
 .vscode/
 .codex
 .idea/
