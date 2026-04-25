@@ -660,6 +660,50 @@ void user_init_main(void)
     }
 
     user_sys_exit();
+#elif defined(USER_TEST_OPEN_INVALID)
+    char banner[12];
+    char ok[15];
+
+    banner[0] = '/';
+    banner[1] = 'e';
+    banner[2] = 't';
+    banner[3] = 'c';
+    banner[4] = '/';
+    banner[5] = 'b';
+    banner[6] = 'a';
+    banner[7] = 'n';
+    banner[8] = 'n';
+    banner[9] = 'e';
+    banner[10] = 'r';
+    banner[11] = '\0';
+
+    if (user_sys_open_mode(banner, 0u) != -1 ||
+        user_sys_open_mode(banner, 0x80000000u) != -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    ok[0] = 'o';
+    ok[1] = 'p';
+    ok[2] = 'e';
+    ok[3] = 'n';
+    ok[4] = 'i';
+    ok[5] = 'n';
+    ok[6] = 'v';
+    ok[7] = 'a';
+    ok[8] = 'l';
+    ok[9] = 'i';
+    ok[10] = 'd';
+    ok[11] = ' ';
+    ok[12] = 'o';
+    ok[13] = 'k';
+    ok[14] = '\n';
+    if (user_sys_write(1, ok, 15u) != 15) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
 #elif defined(USER_TEST_EXEC)
     char path[11];
     char bad[12];
