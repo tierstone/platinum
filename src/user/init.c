@@ -507,6 +507,28 @@ void user_init_main(void)
     }
 
     user_sys_exit();
+#elif defined(USER_TEST_EXEC_SECOND)
+    char path[12];
+
+    path[0] = '/';
+    path[1] = 'b';
+    path[2] = 'i';
+    path[3] = 'n';
+    path[4] = '/';
+    path[5] = 'p';
+    path[6] = 'u';
+    path[7] = 'l';
+    path[8] = 's';
+    path[9] = 'e';
+    path[10] = '2';
+    path[11] = '\0';
+
+    if (user_sys_exec(path) == -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
 #elif defined(USER_TEST_FD_WRITE)
     char out1;
     char out2;

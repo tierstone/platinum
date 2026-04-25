@@ -133,6 +133,11 @@ MODE_RULES = {
         "required": ("sched ok", "user init", "execbadpaths ok"),
         "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
     },
+    "exec-second": {
+        "build_args": (),
+        "required": ("sched ok", "user init", "pulse2 ok"),
+        "forbidden": ("trap ", "fail", "exit fail", "user as fail", "user elf fail", "tss stack fail", "!"),
+    },
 }
 
 
@@ -225,7 +230,7 @@ def verify(mode: str, loops: int, timeout: float) -> int:
         return 1
 
     if mode == "all":
-        modes = ("off", "c", "elf", "elf-pulse", "yield-stress", "bad-syscall", "bad-elf", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf", "dup-full", "bad-pointers", "exec-loop", "exec-bad-loop", "exec-transfer-fail", "exec-registry", "exec-paths", "exec-root", "exec-noent", "exec-nonexec", "exec-bad-elf2", "exec-bad-paths")
+        modes = ("off", "c", "elf", "elf-pulse", "yield-stress", "bad-syscall", "bad-elf", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf", "dup-full", "bad-pointers", "exec-loop", "exec-bad-loop", "exec-transfer-fail", "exec-registry", "exec-paths", "exec-root", "exec-noent", "exec-nonexec", "exec-bad-elf2", "exec-bad-paths", "exec-second")
     else:
         modes = (mode,)
 
