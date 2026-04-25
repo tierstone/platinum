@@ -114,6 +114,58 @@ void user_init_main(void)
     }
 
     user_sys_exit();
+#elif defined(USER_TEST_FD_CLOSED)
+    char banner[12];
+    char value;
+    int64_t fd;
+    char ok[12];
+
+    banner[0] = '/';
+    banner[1] = 'e';
+    banner[2] = 't';
+    banner[3] = 'c';
+    banner[4] = '/';
+    banner[5] = 'b';
+    banner[6] = 'a';
+    banner[7] = 'n';
+    banner[8] = 'n';
+    banner[9] = 'e';
+    banner[10] = 'r';
+    banner[11] = '\0';
+
+    fd = user_sys_open(banner);
+    if (fd < 0 || user_sys_close((int)fd) != 0) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    value = 'C';
+    if (user_sys_read((int)fd, &value, 1u) != -1 ||
+        user_sys_write((int)fd, &value, 1u) != -1 ||
+        user_sys_dup((int)fd) != -1 ||
+        user_sys_close((int)fd) != -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    ok[0] = 'f';
+    ok[1] = 'd';
+    ok[2] = 'c';
+    ok[3] = 'l';
+    ok[4] = 'o';
+    ok[5] = 's';
+    ok[6] = 'e';
+    ok[7] = 'd';
+    ok[8] = ' ';
+    ok[9] = 'o';
+    ok[10] = 'k';
+    ok[11] = '\n';
+    if (user_sys_write(1, ok, 12u) != 12) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
 #elif defined(USER_TEST_BAD_POINTERS)
     char ok[7];
 
