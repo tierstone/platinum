@@ -333,6 +333,13 @@ def user_init_flags(mode: str) -> list[str]:
             "-DUSER_TEST_EXEC_DIR_ROOT=1",
         ]
 
+    if mode == "exec-noent":
+        return [
+            "-DUSER_INIT_ENABLED=1",
+            "-DUSER_INIT_USE_ELF=0",
+            "-DUSER_TEST_EXEC_NOENT=1",
+        ]
+
     raise ValueError(f"unknown user init mode: {mode}")
 
 
@@ -366,7 +373,7 @@ def build_main(argv: list[str] | None = None) -> None:
     parser.add_argument("target", choices=["all", "efi", "clean"])
     parser.add_argument(
         "--user-init",
-        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf", "dup-full", "bad-pointers", "exec-loop", "exec-bad-loop", "exec-transfer-fail", "exec-registry", "exec-paths", "exec-root"],
+        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "exec-elf", "dup-full", "bad-pointers", "exec-loop", "exec-bad-loop", "exec-transfer-fail", "exec-registry", "exec-paths", "exec-root", "exec-noent"],
         default="off",
         help="select first scheduled user task path for test builds",
     )

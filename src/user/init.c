@@ -309,6 +309,46 @@ void user_init_main(void)
     }
 
     user_sys_exit();
+#elif defined(USER_TEST_EXEC_NOENT)
+    char path[10];
+    char ok[14];
+
+    path[0] = '/';
+    path[1] = 'b';
+    path[2] = 'i';
+    path[3] = 'n';
+    path[4] = '/';
+    path[5] = 'n';
+    path[6] = 'o';
+    path[7] = 'p';
+    path[8] = 'e';
+    path[9] = '\0';
+
+    if (user_sys_exec(path) != -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    ok[0] = 'e';
+    ok[1] = 'x';
+    ok[2] = 'e';
+    ok[3] = 'c';
+    ok[4] = 'n';
+    ok[5] = 'o';
+    ok[6] = 'e';
+    ok[7] = 'n';
+    ok[8] = 't';
+    ok[9] = ' ';
+    ok[10] = 'o';
+    ok[11] = 'k';
+    ok[12] = '\n';
+    ok[13] = '\0';
+    if (user_sys_write(1, ok, 13u) != 13) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
 #elif defined(USER_TEST_FD_WRITE)
     char out1;
     char out2;
