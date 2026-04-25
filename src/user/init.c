@@ -349,6 +349,50 @@ void user_init_main(void)
     }
 
     user_sys_exit();
+#elif defined(USER_TEST_EXEC_NONEXEC)
+    char path[12];
+    char ok[16];
+
+    path[0] = '/';
+    path[1] = 'e';
+    path[2] = 't';
+    path[3] = 'c';
+    path[4] = '/';
+    path[5] = 'b';
+    path[6] = 'a';
+    path[7] = 'n';
+    path[8] = 'n';
+    path[9] = 'e';
+    path[10] = 'r';
+    path[11] = '\0';
+
+    if (user_sys_exec(path) != -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    ok[0] = 'e';
+    ok[1] = 'x';
+    ok[2] = 'e';
+    ok[3] = 'c';
+    ok[4] = 'n';
+    ok[5] = 'o';
+    ok[6] = 'n';
+    ok[7] = 'e';
+    ok[8] = 'x';
+    ok[9] = 'e';
+    ok[10] = 'c';
+    ok[11] = ' ';
+    ok[12] = 'o';
+    ok[13] = 'k';
+    ok[14] = '\n';
+    ok[15] = '\0';
+    if (user_sys_write(1, ok, 15u) != 15) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
 #elif defined(USER_TEST_FD_WRITE)
     char out1;
     char out2;
