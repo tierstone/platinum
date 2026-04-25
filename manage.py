@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     build_parser = subparsers.add_parser("build")
     build_parser.add_argument(
         "--user-init",
-        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write", "fd-read", "open-read", "open-flags", "open-invalid", "exec-elf", "dup-full", "bad-pointers", "exec-loop", "exec-bad-loop", "exec-transfer-fail", "exec-registry", "exec-paths", "exec-root", "exec-noent", "exec-nonexec", "exec-bad-elf2", "exec-bad-paths", "exec-second"],
+        choices=["off", "c", "elf", "bad-syscall", "bad-elf", "yield-stress", "bad-bootstrap", "fd-write", "fd-invalid", "fd-read", "open-read", "open-flags", "open-invalid", "exec-elf", "dup-full", "bad-pointers", "exec-loop", "exec-bad-loop", "exec-transfer-fail", "exec-registry", "exec-paths", "exec-root", "exec-noent", "exec-nonexec", "exec-bad-elf2", "exec-bad-paths", "exec-second"],
         default="off",
     )
     build_parser.add_argument(

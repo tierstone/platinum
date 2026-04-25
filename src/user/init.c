@@ -52,6 +52,36 @@ void user_init_main(void)
     }
 
     user_sys_exit();
+#elif defined(USER_TEST_FD_INVALID)
+    char ok[13];
+
+    if (user_sys_close(-1) != -1 ||
+        user_sys_close(99) != -1 ||
+        user_sys_dup(-1) != -1 ||
+        user_sys_dup(99) != -1) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    ok[0] = 'f';
+    ok[1] = 'd';
+    ok[2] = 'i';
+    ok[3] = 'n';
+    ok[4] = 'v';
+    ok[5] = 'a';
+    ok[6] = 'l';
+    ok[7] = 'i';
+    ok[8] = 'd';
+    ok[9] = ' ';
+    ok[10] = 'o';
+    ok[11] = 'k';
+    ok[12] = '\n';
+    if (user_sys_write(1, ok, 13u) != 13) {
+        user_sys_putc('!');
+        user_sys_exit();
+    }
+
+    user_sys_exit();
 #elif defined(USER_TEST_BAD_POINTERS)
     char ok[7];
 
